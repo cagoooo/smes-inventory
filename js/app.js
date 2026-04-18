@@ -249,10 +249,17 @@
     document.body.style.overflow = '';
   };
 
-  // ============ 拍照 ============
-  $('photoInput').addEventListener('change', async (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
+  // ============ 拍照 / 上傳 ============
+  async function handlePhotoFile(f) {
+    if (!f || !state.currentRoom) {
+      if (!state.currentRoom) toast('請先選擇教室', 'error');
+      return;
+    }
+    // 檢查是否為圖片
+    if (!f.type.startsWith('image/')) {
+      toast('請選擇圖片檔', 'error');
+      return;
+    }
     state.currentFile = f;
     state.lastDetection = null;
 
@@ -274,12 +281,84 @@
       $('detectArea').style.display = 'block';
       toast('✨ 辨識完成，請檢查後儲存', 'success');
       vibrate(40);
-      $('detectArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('previewPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
       $('recognizeLoading').style.display = 'none';
       $('detectArea').style.display = 'block';
       toast('辨識失敗，請手動填寫: ' + err.message, 'error');
       console.error(err);
+    }
+  }
+
+  $('photoInput').addEventListener('change', e => handlePhotoFile(e.target.files[0]));
+  // 桌面版拍照按鈕
+  const deskInput = $('photoInputDesktop');
+  if (deskInput) deskInput.addEventListener('change', e => handlePhotoFile(e.target.files[0]));
+
+  // ============ 桌機：拖放照片上傳 ============
+  const dropZone = $('dropZone');
+  if (dropZone) {
+    ['dragenter', 'dragover'].forEach(ev => {
+      dropZone.addEventListener(ev, e => {
+        e.preventDefault(); e.stopPropagation();
+        dropZone.classList.add('drag-over');
+      });
+    });
+    ['dragleave', 'dragend'].forEach(ev => {
+      dropZone.addEventListener(ev, e => {
+        e.preventDefault(); e.stopPropagation();
+        dropZone.classList.remove('drag-over');
+      });
+    });
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault(); e.stopPropagation();
+      dropZone.classList.remove('drag-over');
+      const f = e.dataTransfer?.files?.[0];
+      if (f) handlePhotoFile(f);
+    });
+    // 也支援整頁拖曳（方便性）
+    document.addEventListener('dragover', e => { e.preventDefault(); });
+    document.addEventListener('drop', e => {
+      e.preventDefault();
+      if (e.target.closest('#dropZone')) return; // 已處理
+      if (!state.currentRoom) return;
+      const f = e.dataTransfer?.files?.[0];
+      if (f && f.type.startsWith('image/')) handlePhotoFile(f);
+    });
+  }
+
+  // ============ 鍵盤快捷鍵 (桌機) ============
+  document.addEventListener('keydown', (e) => {
+    // 略過 input/textarea 內的按鍵
+    const tag = e.target.tagName;
+    const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+    // Cmd/Ctrl + K : 打開教室選擇
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      openRoomSheet();
+      return;
+    }
+    // Esc : 關閉 sheet / 取消預覽
+    if (e.key === 'Escape') {
+      if ($('roomSheet').classList.contains('show')) closeRoomSheet();
+      else if ($('previewPanel').style.display !== 'none' && state.currentFile) cancelPreview();
+      return;
+    }
+    if (inInput) return;
+
+    // Space : 觸發拍照（在預覽關閉時）
+    if (e.key === ' ' && state.currentRoom && $('previewPanel').style.display === 'none') {
+      e.preventDefault();
+      ($('photoInputDesktop') || $('photoInput')).click();
+      return;
+    }
+    // Cmd/Ctrl + Enter : 儲存
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      if ($('detectArea').style.display !== 'none') {
+        e.preventDefault();
+        $('btnSave').click();
+      }
     }
   });
 
@@ -435,6 +514,14 @@
     if (dy > 80) { closeRoomSheet(); sheetTouch = null; }
   });
   $('roomSheet').addEventListener('touchend', () => { sheetTouch = null; });
+
+  // ============ 快捷鍵說明 ============
+  const helpBtn = $('helpBtn');
+  if (helpBtn) helpBtn.addEventListener('click', () => $('shortcutsModal').classList.add('show'));
+  const shortcutsModal = $('shortcutsModal');
+  if (shortcutsModal) shortcutsModal.addEventListener('click', e => {
+    if (e.target === shortcutsModal) shortcutsModal.classList.remove('show');
+  });
 
   // ============ 啟動 ============
   loadRooms().catch(e => {

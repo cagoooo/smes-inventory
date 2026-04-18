@@ -706,7 +706,16 @@ main { padding: 12px 16px; max-width: 820px; margin: 0 auto; }
   text-transform: uppercase; letter-spacing: 0.03em;
 }
 
-/* Responsive adjustments */
+/* ================================================================
+   RWD BREAKPOINTS
+   ≤ 640px  : 手機 (預設，以上為手機優先樣式)
+   641-899  : 平板直式
+   900-1279 : 平板橫向 / 小桌機
+   ≥ 1280   : 桌機
+   ≥ 1600   : 大螢幕
+================================================================ */
+
+/* 小手機微調 */
 @media (max-width: 380px) {
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .full { grid-column: span 1; }
@@ -714,12 +723,257 @@ main { padding: 12px 16px; max-width: 820px; margin: 0 auto; }
   .room-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
 
-/* iPhone 有瀏海手機（safe-area）補強 */
+/* iPhone 瀏海 safe-area */
 @supports (padding: max(0px)) {
   .topbar { padding-top: max(10px, var(--safe-top)); }
 }
 
-/* 隱藏 iOS 輸入放大 */
+/* 防 iOS 輸入放大 */
 @media screen and (max-width: 500px) {
   input, select, textarea { font-size: 16px !important; }
+}
+
+/* ================================================================
+   平板直式 (641px+)
+================================================================ */
+@media (min-width: 641px) {
+  main { padding: 20px 24px; max-width: 960px; }
+  .topbar { padding-left: 24px; padding-right: 24px; }
+  .topbar .title { font-size: 19px; }
+  .topbar .subtitle { font-size: 12px; }
+
+  .hero-room { padding: 22px 26px; border-radius: 22px; }
+  .hero-room .name { font-size: 32px; }
+  .hero-room .meta { margin-top: 14px; gap: 10px; }
+  .hero-room .pill { padding: 6px 13px; font-size: 13px; }
+
+  .room-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .room-btn { padding: 14px 12px; }
+  .room-btn .name { font-size: 16px; }
+
+  .form-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 16px; }
+  .form-grid .full { grid-column: span 3; }
+
+  .stat-card { padding: 18px; }
+  .stat-card .val { font-size: 32px; }
+
+  .preview-img-wrap { aspect-ratio: 16/10; max-height: 500px; }
+
+  .modal { max-width: 480px; }
+}
+
+/* ================================================================
+   小桌機 (900px+)
+================================================================ */
+@media (min-width: 900px) {
+  :root { --nav-h: 60px; }
+
+  main { max-width: 1140px; padding: 24px 32px; }
+  body { padding-bottom: 40px; /* 桌面不需要底部固定按鈕空間 */ }
+
+  .topbar { padding: 14px 32px; min-height: 64px; }
+  .topbar .logo { font-size: 26px; }
+  .topbar .title { font-size: 20px; }
+
+  /* ===== 桌面雙欄佈局 ===== */
+  .desktop-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 20px;
+    align-items: start;
+  }
+  .desktop-layout > .main-col { min-width: 0; }
+  .desktop-layout > .side-col {
+    position: sticky; top: calc(var(--nav-h) + 20px);
+    max-height: calc(100vh - var(--nav-h) - 40px);
+    overflow-y: auto;
+  }
+
+  /* Hero 教室卡左右展開 */
+  .hero-room {
+    padding: 26px 30px; border-radius: 24px;
+    display: flex; align-items: center; gap: 28px;
+  }
+  .hero-room > div:first-child { flex: 1; }
+  .hero-room .name { font-size: 38px; margin-top: 4px; }
+  .hero-room .label { font-size: 13px; }
+  .hero-room .meta { margin-top: 14px; }
+  .hero-room .change-btn {
+    position: static; min-height: 40px; padding: 0 18px;
+    font-size: 14px; background: rgba(255,255,255,0.25);
+    align-self: center;
+  }
+  .hero-room .change-btn:hover { background: rgba(255,255,255,0.35); }
+
+  /* 底部固定按鈕在桌面隱藏 */
+  .bottom-cta { display: none !important; }
+
+  /* 桌面用 inline 主要動作按鈕 */
+  .desktop-capture-bar {
+    display: flex; gap: 12px; margin-bottom: 18px; align-items: stretch;
+  }
+  .desktop-capture-bar .btn-capture-inline {
+    flex: 1; padding: 20px;
+    background: linear-gradient(135deg, var(--accent), #ff7a00);
+    color: #fff; font-size: 18px; font-weight: 700;
+    border: none; border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(255,149,0,0.3);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px;
+    transition: all 0.15s;
+  }
+  .desktop-capture-bar .btn-capture-inline:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(255,149,0,0.4);
+  }
+  .desktop-capture-bar .btn-capture-inline .icon { font-size: 28px; }
+  .desktop-capture-bar .btn-capture-inline input { display: none; }
+  .desktop-capture-bar .btn-capture-inline .kbd {
+    font-size: 11px; font-weight: 500; opacity: 0.8;
+    background: rgba(0,0,0,0.2); padding: 2px 7px; border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+
+  /* 拖放區域 */
+  .drop-zone {
+    flex: 1; padding: 20px; border-radius: 16px;
+    border: 2.5px dashed var(--border);
+    background: var(--card);
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    font-weight: 600; color: var(--text-soft);
+    transition: all 0.2s;
+  }
+  .drop-zone.drag-over {
+    background: var(--primary-light); border-color: var(--primary);
+    color: var(--primary); transform: scale(1.01);
+  }
+  .drop-zone .icon { font-size: 28px; }
+
+  /* Bottom Sheet 桌面改成 center modal */
+  .sheet {
+    left: 50%; right: auto; bottom: auto; top: 50%;
+    transform: translate(-50%, -50%) scale(0.95);
+    width: min(92vw, 900px); max-height: 86vh;
+    border-radius: 20px;
+    opacity: 0; transition: transform 0.25s, opacity 0.25s;
+    padding-bottom: 0;
+  }
+  .sheet.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  .sheet-handle { display: none; }
+  .sheet-header { padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .sheet-header h3 { font-size: 22px; }
+  .sheet-body { padding: 16px 24px 24px; }
+  .room-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+
+  /* 預覽圖更大 */
+  .preview-img-wrap { aspect-ratio: 16/9; max-height: 560px; }
+
+  /* 紀錄列表改用更寬敞 */
+  .record-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+  .record-item { cursor: default; }
+  .record-item img { width: 68px; height: 68px; }
+  .record-item .model { font-size: 15px; }
+
+  /* Hover 效果 */
+  .btn:hover:not(:disabled) { opacity: 0.92; }
+  .btn-primary:hover { background: var(--primary-dark); opacity: 1; }
+  .nav-btn:hover { background: var(--primary); color: #fff; }
+  .room-btn:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow); }
+  .recent-chip:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+  .tab-bar button:hover:not(.active) { background: var(--bg); }
+  .list-item:hover { box-shadow: var(--shadow); }
+  .match-suggest:hover { border-color: var(--primary); background: var(--primary-light); }
+
+  /* 滑鼠 cursor */
+  .room-btn, .recent-chip, .record-item, .list-item, .match-suggest { cursor: pointer; }
+
+  /* 管理頁桌面樣式 */
+  .stat-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .stat-card .val { font-size: 34px; }
+
+  .tab-bar { padding: 6px; }
+  .tab-bar button { padding: 12px 16px; font-size: 14px; }
+
+  /* 桌面表格顯示（管理頁） */
+  .desktop-table-view .list-item { display: none; }
+  .desktop-table-view .data-table-desktop { display: table; width: 100%; }
+
+  /* 管理頁列表桌面多欄 */
+  #photoList, #roomsList, #invList {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 10px;
+  }
+  #roomsList .list-item:hover { border: 2px solid var(--primary); padding: 11px; }
+}
+
+/* ================================================================
+   桌機 (1280px+)
+================================================================ */
+@media (min-width: 1280px) {
+  main { max-width: 1320px; padding: 28px 40px; }
+
+  .form-grid { grid-template-columns: repeat(4, 1fr); }
+  .form-grid .full { grid-column: span 4; }
+
+  .preview-img-wrap { max-height: 640px; }
+
+  .room-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+
+  .record-list { grid-template-columns: repeat(3, 1fr); }
+
+  /* 教室選擇器 split view */
+  .sheet { width: min(90vw, 1100px); }
+
+  /* 鍵盤快捷鍵提示 */
+  .kbd-hint {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; color: var(--text-muted); font-weight: 500;
+  }
+  .kbd-hint kbd {
+    font-family: -apple-system, sans-serif;
+    background: var(--bg); border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: 4px;
+    padding: 1px 6px; font-size: 10px; font-weight: 600;
+    color: var(--text-2); min-width: 18px; text-align: center;
+  }
+}
+
+/* ================================================================
+   大螢幕 (1600px+)
+================================================================ */
+@media (min-width: 1600px) {
+  main { max-width: 1480px; padding: 32px 48px; }
+  .desktop-layout { grid-template-columns: minmax(0, 1fr) 400px; gap: 28px; }
+  .hero-room .name { font-size: 42px; }
+}
+
+/* ================================================================
+   印刷樣式（優化列印報表用）
+================================================================ */
+@media print {
+  .topbar, .bottom-cta, .tab-bar, .nav-btn, .btn, .sheet, .sheet-backdrop,
+  .desktop-capture-bar, .drop-zone { display: none !important; }
+  body { background: #fff; color: #000; padding: 0; }
+  .card, .list-item { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+  .stat-card { border: 1px solid #ccc; break-inside: avoid; }
+}
+
+/* ================================================================
+   滑鼠專屬精緻化（非觸控）
+================================================================ */
+@media (hover: hover) and (pointer: fine) {
+  /* 滑鼠環境才顯示 tooltip 等 */
+  [data-tooltip] { position: relative; }
+  [data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    background: var(--text); color: var(--bg-elevated);
+    padding: 4px 10px; border-radius: 6px; font-size: 12px;
+    white-space: nowrap; opacity: 0; pointer-events: none;
+    transition: all 0.15s; font-weight: 500;
+  }
+  [data-tooltip]:hover::after {
+    opacity: 1; transform: translateX(-50%) translateY(0);
+  }
 }

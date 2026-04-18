@@ -22,7 +22,40 @@
   <div class="title">石門國小 盤點
     <div class="subtitle">拍照 → AI 辨識 → 自動比對</div>
   </div>
-  <button class="nav-btn" onclick="location.href='manage.html'">📊</button>
+  <button class="nav-btn" id="helpBtn" data-tooltip="鍵盤快捷鍵" style="margin-right:4px;">⌨</button>
+  <button class="nav-btn" onclick="location.href='manage.html'" data-tooltip="管理後台">📊</button>
+</div>
+
+<!-- 鍵盤快捷鍵說明 Modal -->
+<div class="modal-backdrop" id="shortcutsModal">
+  <div class="modal">
+    <h3>⌨ 鍵盤快捷鍵</h3>
+    <p style="color:var(--text-soft);font-size:13px;">桌機使用者可用以下快捷鍵加速盤點流程</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span>開啟教室選擇</span>
+        <span class="kbd-hint"><kbd>⌘</kbd><kbd>K</kbd> 或 <kbd>Ctrl</kbd><kbd>K</kbd></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span>拍照 / 選擇照片</span>
+        <span class="kbd-hint"><kbd>空白鍵</kbd></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span>儲存這筆紀錄</span>
+        <span class="kbd-hint"><kbd>⌘</kbd><kbd>Enter</kbd> 或 <kbd>Ctrl</kbd><kbd>Enter</kbd></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
+        <span>取消 / 關閉</span>
+        <span class="kbd-hint"><kbd>Esc</kbd></span>
+      </div>
+    </div>
+    <p style="color:var(--text-soft);font-size:12px;margin-top:14px;">
+      💡 <b>拖放上傳</b>：把照片從電腦拖到頁面任一處，會自動進入辨識流程
+    </p>
+    <div class="actions">
+      <button class="btn btn-primary" onclick="document.getElementById('shortcutsModal').classList.remove('show')">了解</button>
+    </div>
+  </div>
 </div>
 
 <main>
@@ -49,14 +82,30 @@
 
     <!-- Hero 教室卡 -->
     <div class="hero-room">
-      <button class="change-btn" onclick="openRoomSheet()">↻ 換</button>
-      <div class="label">📍 目前教室</div>
-      <div class="name" id="curRoomName">-</div>
-      <div class="meta">
-        <span class="pill" id="pillCode">-</span>
-        <span class="pill" id="pillFloor">-</span>
-        <span class="pill" id="pillInv">📦 -</span>
-        <span class="pill" id="pillPhoto">📷 -</span>
+      <div>
+        <div class="label">📍 目前教室</div>
+        <div class="name" id="curRoomName">-</div>
+        <div class="meta">
+          <span class="pill" id="pillCode">-</span>
+          <span class="pill" id="pillFloor">-</span>
+          <span class="pill" id="pillInv">📦 -</span>
+          <span class="pill" id="pillPhoto">📷 -</span>
+        </div>
+      </div>
+      <button class="change-btn" onclick="openRoomSheet()">↻ 換教室</button>
+    </div>
+
+    <!-- 桌面版：大拍照按鈕 + 拖放區 (手機版看不到，手機版有底部固定按鈕) -->
+    <div class="desktop-capture-bar" id="desktopCaptureBar">
+      <label class="btn-capture-inline" for="photoInputDesktop">
+        <span class="icon">📷</span>
+        <span>拍攝 / 選擇照片</span>
+        <span class="kbd">Space</span>
+        <input id="photoInputDesktop" type="file" accept="image/*">
+      </label>
+      <div class="drop-zone" id="dropZone" data-tooltip="也可拖放照片到這裡">
+        <span class="icon">📥</span>
+        <span>拖曳照片到此區域</span>
       </div>
     </div>
 
