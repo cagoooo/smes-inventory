@@ -65,6 +65,7 @@
     <button data-tab="photos">📷 拍照</button>
     <button data-tab="rooms">🏫 教室</button>
     <button data-tab="inv">📦 財產</button>
+    <button data-tab="qr">🏷 QR 標籤</button>
     <button data-tab="import">📥 匯入</button>
   </div>
 
@@ -148,6 +149,52 @@
         </div>
       </div>
 
+      <!-- 設備壽命預測（每台單獨） -->
+      <div class="chart-card full">
+        <h3>🔮 設備壽命預測（每台剩餘使用年限）</h3>
+        <div id="lifespanPredict"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Tab: QR 標籤 -->
+  <div class="tab-content" id="tab-qr" style="display:none;">
+    <div class="card">
+      <h2>🏷 QR Code 財產標籤批次列印</h2>
+      <p style="font-size:13px;color:var(--text-soft);line-height:1.5;margin:6px 0 14px;">
+        為財產批次生成 QR Code 貼紙。掃描後可直接進入系統查看該財產資訊。
+      </p>
+
+      <div class="field" style="margin-bottom:12px;">
+        <label>標籤紙規格</label>
+        <select id="qrLayout">
+          <option value="50x30-A4">50×30mm · 每頁 36 張（A4 通用）</option>
+          <option value="70x42-A4">70×42mm · 每頁 21 張（A4 通用）</option>
+          <option value="80x50-A4">80×50mm · 每頁 10 張（A4，較大字體）</option>
+        </select>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <input id="qrFilter" type="text" placeholder="搜尋欲列印的財產（編號/型號）" style="flex:1;min-width:200px;padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+        <select id="qrRoomFilter" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+          <option value="">所有教室</option>
+        </select>
+        <select id="qrYearFilter" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+          <option value="">所有年份</option>
+        </select>
+        <button class="btn btn-ghost" onclick="qrSelectAll()">全選可見</button>
+        <button class="btn btn-ghost" onclick="qrUnselectAll()">清除</button>
+      </div>
+
+      <div style="padding:12px;background:var(--primary-light);border-radius:10px;margin-bottom:12px;">
+        📊 <b>已選 <span id="qrSelectedCount">0</span> 張</b> / 可見 <span id="qrVisibleCount">0</span> 張
+        <button class="btn btn-success" style="float:right;" onclick="generateQRPDF()" id="qrGenBtn">
+          🖨 產生 PDF 開始列印
+        </button>
+      </div>
+
+      <div id="qrList" class="qr-list"></div>
     </div>
   </div>
 
@@ -236,6 +283,9 @@
 <script src="js/supabase-client.js"></script>
 <script src="js/floorplan.js"></script>
 <script src="js/dashboard.js"></script>
+<script src="js/qr-labels.js"></script>
+<script src="js/error-monitor.js"></script>
+<script src="js/version-check.js"></script>
 <script>
   SMES_AUTH.initClient();
   SMES_AUTH.initSession();

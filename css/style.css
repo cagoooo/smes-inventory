@@ -930,6 +930,71 @@ main { padding: 12px 16px; max-width: 820px; margin: 0 auto; }
   text-transform: uppercase; letter-spacing: 0.03em;
 }
 
+/* =========== 版本號 + 更新提示 =========== */
+.version-tag {
+  position: fixed; bottom: 4px; right: 6px; z-index: 10;
+  font-size: 10px; color: var(--text-muted); opacity: 0.6;
+  padding: 2px 6px;
+}
+.version-tag a { color: inherit; text-decoration: none; }
+.version-tag:hover { opacity: 1; }
+
+.update-banner {
+  position: fixed; top: calc(var(--safe-top) + 62px);
+  left: 50%; transform: translateX(-50%);
+  z-index: 50; padding: 8px 14px;
+  background: var(--primary); color: #fff;
+  border-radius: 999px; font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+  box-shadow: var(--shadow-lg);
+  animation: fadeInUp 0.3s ease-out;
+}
+.update-banner button {
+  background: #fff; color: var(--primary);
+  border: none; padding: 4px 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.update-banner button:last-child {
+  background: transparent; color: #fff; padding: 2px 6px;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* =========== QR 標籤選擇列表 =========== */
+.qr-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px;
+}
+.qr-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px; background: var(--card);
+  border: 1.5px solid var(--border); border-radius: 10px;
+  cursor: pointer; transition: all 0.15s;
+}
+.qr-item:hover { border-color: var(--primary); background: var(--primary-light); }
+.qr-item input[type="checkbox"] {
+  margin-top: 2px; width: 20px; height: 20px; cursor: pointer;
+  accent-color: var(--primary);
+}
+.qr-item .qr-pn { font-family: monospace; font-weight: 700; font-size: 14px; }
+.qr-item .qr-sub { font-size: 12px; color: var(--text-soft); margin-top: 2px; }
+.qr-item .qr-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+/* 壽命預測區 */
+.lifespan-details summary {
+  cursor: pointer; padding: 10px 14px; background: var(--bg);
+  border-radius: 10px; font-weight: 600; font-size: 14px;
+  list-style: none;
+}
+.lifespan-details summary::-webkit-details-marker { display: none; }
+.lifespan-details summary::before {
+  content: '▶ '; color: var(--text-muted); transition: transform 0.2s;
+  display: inline-block;
+}
+.lifespan-details[open] summary::before { transform: rotate(90deg); }
+
 /* =========== 離線狀態 Badge =========== */
 .offline-badge {
   position: fixed; top: calc(var(--safe-top) + 62px);

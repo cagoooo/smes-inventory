@@ -414,6 +414,108 @@
     importState = { workbook:null, sheetName:null, rows:[], headers:[], mapping:{} };
   };
 
+  // ============ QR 標籤批次列印 ============
+  const qrSelected = new Set();
+
+  function renderQRList() {
+    const kw = ($('qrFilter')?.value || '').trim().toLowerCase();
+    const room = $('qrRoomFilter')?.value || '';
+    const year = $('qrYearFilter')?.value || '';
+
+    // 初次渲染 filter
+    if ($('qrRoomFilter') && !$('qrRoomFilter').dataset.filled) {
+      fillSelect('qrRoomFilter', cache.rooms);
+      fillYearSelect('qrYearFilter', cache.inventory);
+      $('qrRoomFilter').dataset.filled = '1';
+    }
+
+    let list = cache.inventory;
+    if (room) list = list.filter(i => i.classroom_code === room);
+    if (year) list = list.filter(i => i.acquired_year === parseInt(year));
+    if (kw) list = list.filter(i =>
+      (i.property_number || '').toLowerCase().includes(kw) ||
+      (i.model || '').toLowerCase().includes(kw) ||
+      (i.brand || '').toLowerCase().includes(kw)
+    );
+
+    $('qrVisibleCount').textContent = list.length;
+    $('qrSelectedCount').textContent = qrSelected.size;
+    $('qrGenBtn').disabled = qrSelected.size === 0;
+
+    if (list.length === 0) {
+      $('qrList').innerHTML = '<div class="empty">無符合資料</div>';
+      return;
+    }
+
+    $('qrList').innerHTML = list.slice(0, 300).map(i => {
+      const checked = qrSelected.has(i.id) ? 'checked' : '';
+      return `<label class="qr-item">
+        <input type="checkbox" ${checked} onchange="qrToggle(${i.id})">
+        <div>
+          <div class="qr-pn">${i.property_number || '-'}</div>
+          <div class="qr-sub">${i.brand || ''} ${i.model || ''}</div>
+          <div class="qr-meta">${i.classroom_code || '-'} ${i.acquired_year ? '· '+i.acquired_year+'年' : ''}</div>
+        </div>
+      </label>`;
+    }).join('') + (list.length > 300 ? `<div style="text-align:center;padding:10px;color:var(--text-muted);">僅顯示前 300 筆 (共 ${list.length})</div>` : '');
+  }
+
+  window.qrToggle = (id) => {
+    if (qrSelected.has(id)) qrSelected.delete(id);
+    else qrSelected.add(id);
+    $('qrSelectedCount').textContent = qrSelected.size;
+    $('qrGenBtn').disabled = qrSelected.size === 0;
+  };
+
+  window.qrSelectAll = () => {
+    const kw = ($('qrFilter')?.value || '').trim().toLowerCase();
+    const room = $('qrRoomFilter')?.value || '';
+    const year = $('qrYearFilter')?.value || '';
+    cache.inventory.forEach(i => {
+      if (room && i.classroom_code !== room) return;
+      if (year && i.acquired_year !== parseInt(year)) return;
+      if (kw && !(i.property_number||'').toLowerCase().includes(kw) && !(i.model||'').toLowerCase().includes(kw)) return;
+      qrSelected.add(i.id);
+    });
+    renderQRList();
+  };
+
+  window.qrUnselectAll = () => {
+    qrSelected.clear();
+    renderQRList();
+  };
+
+  window.generateQRPDF = async () => {
+    const items = cache.inventory.filter(i => qrSelected.has(i.id));
+    if (!items.length) { toast('請先勾選財產', 'error'); return; }
+    const layout = $('qrLayout').value;
+    const btn = $('qrGenBtn');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '產生中…';
+    try {
+      const fileName = await window.SMES_QR.generate(items, layout);
+      toast(`✅ 已產生 ${fileName}`, 'success');
+    } catch (e) {
+      toast('產生失敗: ' + e.message, 'error');
+      console.error(e);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  };
+
+  // 綁定 filter
+  ['qrFilter', 'qrRoomFilter', 'qrYearFilter'].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener('input', renderQRList);
+  });
+
+  // Tab 切換時初始化 QR list
+  $('tabBar').querySelectorAll('button[data-tab="qr"]').forEach(b => {
+    b.addEventListener('click', () => renderQRList());
+  });
+
   // ============ Start ============
   loadAll();
 })();

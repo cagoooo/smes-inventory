@@ -1,0 +1,77 @@
+name: 每週自動備份 Supabase 資料
+
+on:
+  schedule:
+    # 每週日 UTC 18:00 = 台灣週一 02:00
+    - cron: '0 18 * * 0'
+  workflow_dispatch:  # 可手動觸發
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下載 classrooms 資料表
+        env:
+          SUPABASE_URL: https://xcnmmaayrtiklntvhdhc.supabase.co
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          mkdir -p backups/$(date +%Y-%m)
+          DATE=$(date +%Y-%m-%d)
+
+          for TABLE in classrooms inventory_items photo_records profiles; do
+            echo "Downloading $TABLE..."
+            curl -sS \
+              -H "apikey: $SUPABASE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_KEY" \
+              "$SUPABASE_URL/rest/v1/$TABLE?select=*&limit=50000" \
+              -o "backups/$(date +%Y-%m)/${TABLE}_${DATE}.json"
+
+            ROWS=$(jq length "backups/$(date +%Y-%m)/${TABLE}_${DATE}.json")
+            echo "  $TABLE: $ROWS rows"
+          done
+
+      - name: 產生備份摘要
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          MONTH=$(date +%Y-%m)
+          cat > "backups/$MONTH/README_${DATE}.md" <<EOF
+          # 備份摘要 · ${DATE}
+
+          | 資料表 | 筆數 |
+          |--------|------|
+          $(for TABLE in classrooms inventory_items photo_records profiles; do
+            F="backups/$MONTH/${TABLE}_${DATE}.json"
+            if [ -f "$F" ]; then
+              ROWS=$(jq length "$F")
+              echo "| $TABLE | $ROWS |"
+            fi
+          done)
+
+          執行於 GitHub Actions runner \`${{ github.run_id }}\`
+          EOF
+
+      - name: Commit 備份
+        run: |
+          git config user.name "backup-bot"
+          git config user.email "backup@noreply.github.com"
+          git add backups/
+          git diff --staged --quiet || git commit -m "chore(backup): 週備份 $(date +%Y-%m-%d)"
+          git push
+
+      - name: 清理超過 12 個月的舊備份
+        run: |
+          CUTOFF=$(date -d '12 months ago' +%Y-%m)
+          find backups/ -maxdepth 1 -type d -name "20*" | while read DIR; do
+            DIRMONTH=$(basename "$DIR")
+            if [[ "$DIRMONTH" < "$CUTOFF" ]]; then
+              echo "Removing old backup: $DIR"
+              rm -rf "$DIR"
+            fi
+          done
+          git add -A
+          git diff --staged --quiet || git commit -m "chore(backup): 清理 12 個月前的舊備份"
+          git push

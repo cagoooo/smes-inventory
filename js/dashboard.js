@@ -366,6 +366,116 @@
     `).join('');
   }
 
+  // ============ 設備壽命預測 (新增) ============
+  // 使用標準化機型的歷史資料預測單台還能用幾年
+  function predictLifespan(inventory) {
+    // 1. 同標準化機型分組
+    const byModel = {};
+    inventory.forEach(i => {
+      if (!i.model || !i.acquired_year) return;
+      if (!byModel[i.model]) byModel[i.model] = [];
+      byModel[i.model].push({ ...i, age: CUR_ROC - i.acquired_year });
+    });
+
+    // 2. 計算每型號平均壽命（使用「最老存活機齡」作壽命估計）
+    //    對於台灣國小財產通常不報廢，用「假設 15 年壽命」的保守估計
+    const ASSUMED_MAX_LIFE = 15;
+    const predictions = [];
+
+    for (const [model, items] of Object.entries(byModel)) {
+      if (items.length < 2) continue;
+      const ages = items.map(x => x.age);
+      const maxAge = Math.max(...ages);
+      const avgAge = ages.reduce((s, a) => s + a, 0) / ages.length;
+      // 假設壽命 = max(最老機齡, 8 年基本)，再保留 10% 的 buffer
+      const estimatedLifespan = Math.min(ASSUMED_MAX_LIFE, Math.max(maxAge + 1, 10));
+
+      items.forEach(item => {
+        const remaining = estimatedLifespan - item.age;
+        let status, color;
+        if (remaining <= 0) { status = '已超過預期壽命'; color = '#8b2929'; }
+        else if (remaining <= 2) { status = '接近壽命末期'; color = '#ff3b30'; }
+        else if (remaining <= 5) { status = '後半段壽命'; color = '#ff9500'; }
+        else { status = '使用良好'; color = '#34c759'; }
+
+        predictions.push({
+          property_number: item.property_number,
+          model: item.model,
+          brand: item.brand,
+          classroom_code: item.classroom_code,
+          current_age: item.age,
+          sample_size: items.length,
+          estimated_lifespan: estimatedLifespan,
+          remaining_years: Math.max(0, remaining),
+          predicted_replace_year: CUR_ROC + Math.max(0, remaining),
+          status, color
+        });
+      });
+    }
+
+    // 排序：剩餘年份少的在前（最急）
+    predictions.sort((a, b) => a.remaining_years - b.remaining_years);
+    return predictions;
+  }
+
+  function renderLifespanPrediction(inventory) {
+    const container = document.getElementById('lifespanPredict');
+    if (!container) return;
+
+    const predictions = predictLifespan(inventory);
+    if (predictions.length === 0) {
+      container.innerHTML = '<div class="empty">無足夠歷史資料進行預測</div>';
+      return;
+    }
+
+    // 按機型分組顯示
+    const byModel = {};
+    predictions.forEach(p => {
+      if (!byModel[p.model]) byModel[p.model] = { items: [], sample: p.sample_size, lifespan: p.estimated_lifespan };
+      byModel[p.model].items.push(p);
+    });
+
+    // KPI 摘要
+    const critical = predictions.filter(p => p.remaining_years <= 2).length;
+    const warning = predictions.filter(p => p.remaining_years > 2 && p.remaining_years <= 5).length;
+    const healthy = predictions.filter(p => p.remaining_years > 5).length;
+
+    container.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
+        <div class="kpi-card danger"><div class="label">壽命末期</div><div class="val">${critical}</div><div class="sub">≤ 2 年</div></div>
+        <div class="kpi-card accent"><div class="label">後半段壽命</div><div class="val">${warning}</div><div class="sub">2-5 年</div></div>
+        <div class="kpi-card success"><div class="label">使用良好</div><div class="val">${healthy}</div><div class="sub">&gt; 5 年</div></div>
+      </div>
+      <details class="lifespan-details">
+        <summary>📋 展開：前 20 筆最急需汰換</summary>
+        <div class="table-wrap" style="margin-top:10px;">
+          <table class="data-table">
+            <thead><tr>
+              <th>財產編號</th><th>機型</th><th>位置</th><th>目前機齡</th><th>預期壽命</th><th>剩餘</th><th>建議汰換</th>
+            </tr></thead>
+            <tbody>
+              ${predictions.slice(0, 20).map(p => `
+                <tr>
+                  <td style="font-family:monospace">${p.property_number}</td>
+                  <td>${p.brand || ''} ${p.model}</td>
+                  <td>${p.classroom_code || '-'}</td>
+                  <td>${p.current_age} 年</td>
+                  <td>${p.estimated_lifespan} 年<br><small style="color:var(--text-muted)">(N=${p.sample_size})</small></td>
+                  <td style="color:${p.color};font-weight:700;">${p.remaining_years} 年</td>
+                  <td style="color:${p.color};">民國 ${p.predicted_replace_year} 年</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5;">
+        💡 預測原理：同標準化機型的最老機齡 + 1 當作「該機型預期壽命」（至少 10 年、最多 15 年）。樣本數 N≥2 才會出現於本表。
+        實際壽命會因使用強度、維護程度而異；本數據僅供參考。
+      </p>
+    `;
+  }
+
   // ============ 主入口 ============
   async function render(inventory, rooms) {
     setChartDefaults();
@@ -383,6 +493,7 @@
     if (window.SMES_FLOORPLAN && rooms) renderHeatmap(rooms, inventory);
     setupBudget(inventory);
     renderLifespan(agg);
+    renderLifespanPrediction(inventory);
   }
 
   window.SMES_DASHBOARD = { render };
