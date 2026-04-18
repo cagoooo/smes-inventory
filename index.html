@@ -12,7 +12,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>石門盤點</title>
-<link rel="stylesheet" href="css/style.css?v=7.2.6">
+<link rel="stylesheet" href="css/style.css?v=7.2.7">
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -260,11 +260,60 @@
     <button class="btn-capture-mini" onclick="SMES_CAMERA.open(handlePhotoFile)" data-tooltip="Live 相機 + 九宮格">
       🎥<br><small>Live</small>
     </button>
-    <label class="btn-capture" for="photoInput">
+    <button class="btn-capture" id="btnOpenCapture" onclick="openCaptureMenu()">
       <span class="icon">📷</span>
       <span>拍攝 / 選擇照片</span>
-      <input id="photoInput" type="file" accept="image/*" capture="environment">
-    </label>
+    </button>
+  </div>
+</div>
+
+<!-- 3 個隱藏 file input，依使用者選擇對應觸發 -->
+<input id="photoInput" type="file" accept="image/*" capture="environment" style="display:none;">
+<input id="photoInputLibrary" type="file" accept="image/*" style="display:none;">
+<input id="photoInputAny" type="file" style="display:none;">
+
+<!-- 拍攝功能選單 Action Sheet -->
+<div class="sheet-backdrop" id="captureBackdrop" onclick="closeCaptureMenu()"></div>
+<div class="sheet capture-sheet" id="captureSheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <h3>📷 選擇照片來源</h3>
+    <button class="sheet-close" onclick="closeCaptureMenu()">✕</button>
+  </div>
+  <div class="sheet-body capture-menu">
+    <button class="capture-option" onclick="triggerCapture('camera')">
+      <span class="capture-option-icon cam">📸</span>
+      <div class="capture-option-info">
+        <div class="capture-option-title">立即拍照</div>
+        <div class="capture-option-desc">開啟 iOS 相機直接拍攝</div>
+      </div>
+      <span class="capture-option-arrow">›</span>
+    </button>
+    <button class="capture-option" onclick="triggerCapture('live')">
+      <span class="capture-option-icon live">🎥</span>
+      <div class="capture-option-info">
+        <div class="capture-option-title">Live 相機（推薦）</div>
+        <div class="capture-option-desc">九宮格對齊 · 光線/反光偵測</div>
+      </div>
+      <span class="capture-option-arrow">›</span>
+    </button>
+    <button class="capture-option" onclick="triggerCapture('library')">
+      <span class="capture-option-icon lib">🖼️</span>
+      <div class="capture-option-info">
+        <div class="capture-option-title">從相簿選擇</div>
+        <div class="capture-option-desc">從照片圖庫挑選現有照片</div>
+      </div>
+      <span class="capture-option-arrow">›</span>
+    </button>
+    <button class="capture-option" onclick="triggerCapture('file')">
+      <span class="capture-option-icon file">📁</span>
+      <div class="capture-option-info">
+        <div class="capture-option-title">選擇檔案</div>
+        <div class="capture-option-desc">從 iCloud Drive / 檔案 App 選取</div>
+      </div>
+      <span class="capture-option-arrow">›</span>
+    </button>
+    <button class="btn btn-ghost capture-cancel" onclick="closeCaptureMenu()">取消</button>
   </div>
 </div>
 
@@ -345,15 +394,15 @@
 
 </div><!-- /appShell -->
 
-<script src="config.js?v=7.2.6"></script>
-<script src="js/auth.js?v=7.2.6"></script>
-<script src="js/supabase-client.js?v=7.2.6"></script>
-<script src="js/offline.js?v=7.2.6"></script>
-<script src="js/camera.js?v=7.2.6"></script>
-<script src="js/gemini.js?v=7.2.6"></script>
-<script src="js/floorplan.js?v=7.2.6"></script>
-<script src="js/error-monitor.js?v=7.2.6"></script>
-<script src="js/version-check.js?v=7.2.6"></script>
+<script src="config.js?v=7.2.7"></script>
+<script src="js/auth.js?v=7.2.7"></script>
+<script src="js/supabase-client.js?v=7.2.7"></script>
+<script src="js/offline.js?v=7.2.7"></script>
+<script src="js/camera.js?v=7.2.7"></script>
+<script src="js/gemini.js?v=7.2.7"></script>
+<script src="js/floorplan.js?v=7.2.7"></script>
+<script src="js/error-monitor.js?v=7.2.7"></script>
+<script src="js/version-check.js?v=7.2.7"></script>
 <script>
   // 註冊 Service Worker（Cache-first + 背景同步）
   if ('serviceWorker' in navigator) {
@@ -371,7 +420,7 @@
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/app.js?v=7.2.6';
+      s.src = 'js/app.js?v=7.2.7';
       document.body.appendChild(s);
     }
   });

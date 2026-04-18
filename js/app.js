@@ -11,6 +11,7 @@
     currentCat: '',
     currentFile: null,
     lastDetection: null,
+    lastCaptureMode: null,  // 記住手機端上次選的拍照方式（camera/library/file/live）
   };
 
   // ============ Utilities ============
@@ -395,9 +396,70 @@
   // 桌面版拍照按鈕
   const deskInput = $('photoInputDesktop');
   if (deskInput) deskInput.addEventListener('change', e => handlePhotoFile(e.target.files[0]));
+  // 手機端：相簿 / 其他檔案 兩個額外 input
+  const libInput = $('photoInputLibrary');
+  if (libInput) libInput.addEventListener('change', e => handlePhotoFile(e.target.files[0]));
+  const anyInput = $('photoInputAny');
+  if (anyInput) anyInput.addEventListener('change', e => handlePhotoFile(e.target.files[0]));
 
   // Live 相機呼叫 handlePhotoFile — 暴露給 window 供 camera.js / HTML onclick 使用
   window.handlePhotoFile = handlePhotoFile;
+
+  // ============ 手機端：拍攝功能選單（Action Sheet）============
+  window.openCaptureMenu = () => {
+    if (!state.currentRoom) {
+      toast('請先選擇教室', 'error');
+      openRoomSheet();
+      return;
+    }
+    const backdrop = $('captureBackdrop');
+    const sheet = $('captureSheet');
+    if (backdrop) backdrop.classList.add('show');
+    if (sheet) sheet.classList.add('show');
+    try { navigator.vibrate && navigator.vibrate(10); } catch {}
+  };
+
+  window.closeCaptureMenu = () => {
+    const backdrop = $('captureBackdrop');
+    const sheet = $('captureSheet');
+    if (backdrop) backdrop.classList.remove('show');
+    if (sheet) sheet.classList.remove('show');
+  };
+
+  window.triggerCapture = (mode) => {
+    state.lastCaptureMode = mode;  // 記住上次選擇，供連續拍照模式沿用
+    try { localStorage.setItem('smes_last_capture_mode', mode); } catch {}
+    closeCaptureMenu();
+    // 給一點延遲讓 sheet 動畫完成再觸發（iOS 否則會忽略觸發）
+    setTimeout(() => {
+      if (mode === 'camera') {
+        // iOS 直接開相機
+        $('photoInput').value = '';
+        $('photoInput').click();
+      } else if (mode === 'library') {
+        // 只從相簿選（不觸發相機）
+        $('photoInputLibrary').value = '';
+        $('photoInputLibrary').click();
+      } else if (mode === 'file') {
+        // 任意檔案（iCloud / 檔案 App）
+        $('photoInputAny').value = '';
+        $('photoInputAny').click();
+      } else if (mode === 'live') {
+        // Live 相機（我們自己的 getUserMedia）
+        if (window.SMES_CAMERA) {
+          SMES_CAMERA.open(handlePhotoFile);
+        } else {
+          toast('Live 相機模組未載入', 'error');
+        }
+      }
+    }, 180);
+  };
+
+  // 啟動時還原上次選擇
+  try {
+    const last = localStorage.getItem('smes_last_capture_mode');
+    if (last) state.lastCaptureMode = last;
+  } catch {}
 
   // ============ 桌機：拖放照片上傳 ============
   const dropZone = $('dropZone');
@@ -469,7 +531,8 @@
   window.cancelPreview = () => {
     if (!confirm('放棄這張照片？')) return;
     $('previewPanel').style.display = 'none';
-    $('photoInput').value = '';
+    ['photoInput', 'photoInputDesktop', 'photoInputLibrary', 'photoInputAny']
+      .forEach(id => { const el = $(id); if (el) el.value = ''; });
     state.currentFile = null;
   };
 
@@ -575,6 +638,12 @@
         created_by: user?.id || null
       };
 
+      // 工具：清空所有 file input 值（讓同一張照片可重選）
+      const resetAllInputs = () => {
+        ['photoInput', 'photoInputDesktop', 'photoInputLibrary', 'photoInputAny']
+          .forEach(id => { const el = $(id); if (el) el.value = ''; });
+      };
+
       // 離線時 → 進 IndexedDB 佇列
       if (!navigator.onLine) {
         await window.SMES_OFFLINE.enqueuePhoto({
@@ -587,8 +656,7 @@
         state.currentFile = null;
         state.lastDetection = null;
         $('previewPanel').style.display = 'none';
-        $('photoInput').value = '';
-        if ($('photoInputDesktop')) $('photoInputDesktop').value = '';
+        resetAllInputs();
         return;
       }
 
@@ -603,15 +671,22 @@
       state.currentFile = null;
       state.lastDetection = null;
       $('previewPanel').style.display = 'none';
-      $('photoInput').value = '';
-      if ($('photoInputDesktop')) $('photoInputDesktop').value = '';
+      resetAllInputs();
       await loadRoomRecords();
       await loadGlobalProgress();
 
-      // 連續拍照模式：儲存成功後自動開相機繼續拍
+      // 連續拍照模式：儲存成功後自動用上次選過的拍照方式繼續拍
       if ($('continuousMode')?.checked) {
         setTimeout(() => {
-          ($('photoInputDesktop') || $('photoInput')).click();
+          if (window.matchMedia('(min-width: 900px)').matches && $('photoInputDesktop')) {
+            $('photoInputDesktop').click();
+          } else if (state.lastCaptureMode) {
+            // 手機：重複上次的選擇（立即拍照 / 相簿 / 檔案 / Live）
+            triggerCapture(state.lastCaptureMode);
+          } else {
+            // 首次沒記錄 → 跳選單
+            openCaptureMenu();
+          }
         }, 500);
       }
     } catch (e) {
