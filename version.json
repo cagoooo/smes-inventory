@@ -1,5 +1,5 @@
 {
-  "version": "v7.2.1",
-  "build": "2026-04-18b",
-  "notes": "修正 Auth 無限 reload bug + Veyon JSON 匯出雛形"
+  "version": "v7.2.2",
+  "build": "2026-04-18c",
+  "notes": "修正 QR 批次產生失敗 (改用 QRious 庫)"
 }

@@ -13,9 +13,19 @@
 
   async function ensureLibs() {
     if (pdfReady) return;
-    // 動態載入 jsPDF + QRCode
+    // 動態載入 jsPDF + QRious (更穩定的瀏覽器 QR 庫)
     await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
-    await loadScript('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js');
+    // QRious fallback 多個 CDN，避免某個 CDN 失效
+    if (!window.QRious) {
+      try {
+        await loadScript('https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js');
+      } catch {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js');
+      }
+    }
+    if (!window.QRious) {
+      throw new Error('QR Code 套件載入失敗，請檢查網路連線');
+    }
     pdfReady = true;
   }
 
@@ -25,19 +35,21 @@
       const s = document.createElement('script');
       s.src = url;
       s.onload = resolve;
-      s.onerror = reject;
+      s.onerror = () => reject(new Error('Load failed: ' + url));
       document.head.appendChild(s);
     });
   }
 
   async function qrDataURL(text, size = 200) {
-    return new Promise((resolve, reject) => {
-      window.QRCode.toDataURL(text, {
-        errorCorrectionLevel: 'M',
-        width: size,
-        margin: 1
-      }, (err, url) => err ? reject(err) : resolve(url));
+    const qr = new window.QRious({
+      value: text,
+      size,
+      level: 'M',  // 錯誤糾正等級：L/M/Q/H
+      background: '#fff',
+      foreground: '#000',
+      padding: 0
     });
+    return qr.toDataURL('image/png');
   }
 
   async function generate(items, layoutKey = '50x30-A4') {
