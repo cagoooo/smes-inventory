@@ -1,5 +1,5 @@
 {
-  "version": "v7.1",
+  "version": "v7.2",
   "build": "2026-04-18",
-  "notes": "Rate limit + 自動更新提示 + QR 批次 + 壽命預測 + 錯誤監控"
+  "notes": "Veyon 網路整合 (150 台) + 月報表 PDF 一鍵產生"
 }

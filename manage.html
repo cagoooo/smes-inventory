@@ -65,12 +65,20 @@
     <button data-tab="photos">📷 拍照</button>
     <button data-tab="rooms">🏫 教室</button>
     <button data-tab="inv">📦 財產</button>
+    <button data-tab="network">🌐 網路</button>
     <button data-tab="qr">🏷 QR 標籤</button>
     <button data-tab="import">📥 匯入</button>
   </div>
 
   <!-- Tab: 儀表板 -->
   <div class="tab-content" id="tab-dashboard">
+
+    <!-- 月報表 PDF 按鈕 -->
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="generateMonthlyPDF()" id="btnMonthlyReport">
+        📄 產生本月月報表 PDF
+      </button>
+    </div>
 
     <!-- KPI 條 -->
     <div class="kpi-grid">
@@ -155,6 +163,39 @@
         <div id="lifespanPredict"></div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- Tab: 網路 -->
+  <div class="tab-content" id="tab-network" style="display:none;">
+    <div class="card">
+      <h2>🌐 網路設備管理（Veyon 同步資料）</h2>
+      <p style="font-size:13px;color:var(--text-soft);line-height:1.5;margin:6px 0 14px;">
+        來自 Veyon 的 150 台設備固定 IP / MAC 對應表。<b>10.44 網段</b>為電腦教室學生機，<b>10.36 網段</b>為教師/行政機，<b>10.66 網段</b>為無線移動設備。
+      </p>
+
+      <div class="kpi-grid" id="networkKPI" style="grid-template-columns:repeat(3,1fr);"></div>
+
+      <div style="display:flex;gap:6px;margin:14px 0 10px;flex-wrap:wrap;">
+        <input id="netSearch" type="text" placeholder="搜尋名稱 / IP / MAC" style="flex:1;min-width:180px;padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+        <select id="netSegment" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+          <option value="">所有網段</option>
+          <option value="10.44 (電腦教室)">10.44 電腦教室</option>
+          <option value="10.36 (教學行政)">10.36 教學行政</option>
+          <option value="10.66 (無線/移動)">10.66 無線/移動</option>
+        </select>
+        <select id="netRole" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+          <option value="">所有角色</option>
+          <option value="computer_lab_student">電腦教室學生機</option>
+          <option value="computer_lab_teacher">電腦教室教師機</option>
+          <option value="classroom_teacher">班級教師機</option>
+          <option value="classroom_public">班級公用機</option>
+          <option value="admin_office">行政辦公</option>
+          <option value="mobile_touch">移動觸屏</option>
+        </select>
+      </div>
+
+      <div id="netList"></div>
     </div>
   </div>
 
@@ -284,6 +325,7 @@
 <script src="js/floorplan.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/qr-labels.js"></script>
+<script src="js/monthly-report.js"></script>
 <script src="js/error-monitor.js"></script>
 <script src="js/version-check.js"></script>
 <script>

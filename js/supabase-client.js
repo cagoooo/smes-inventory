@@ -126,6 +126,11 @@
       return rest('classroom_stats?select=*&order=floor,code');
     },
 
+    // 網路設備
+    async listNetworkDevices() {
+      return rest('network_devices?select=*&order=network_segment,classroom_code&limit=1000');
+    },
+
     // Storage
     uploadPhoto,
     publicUrl,

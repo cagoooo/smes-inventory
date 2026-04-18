@@ -516,6 +516,130 @@
     b.addEventListener('click', () => renderQRList());
   });
 
+  // ============ 網路設備 Tab ============
+  let netDevices = null;
+
+  async function loadNetwork() {
+    if (netDevices) return netDevices;
+    try {
+      const list = await DB.listNetworkDevices?.() ||
+        fetch(`${window.SMES_CONFIG.SUPABASE_URL}/rest/v1/network_devices?select=*&order=network_segment,classroom_code`, {
+          headers: {
+            apikey: window.SMES_CONFIG.SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${window.SMES_AUTH?.getAccessToken?.() || window.SMES_CONFIG.SUPABASE_ANON_KEY}`
+          }
+        }).then(r => r.json());
+      netDevices = await Promise.resolve(list);
+      return netDevices;
+    } catch (e) {
+      console.error(e);
+      return [];
+    }
+  }
+
+  async function renderNetwork() {
+    const list = await loadNetwork();
+    if (!list.length) {
+      $('netList').innerHTML = '<div class="empty">無網路設備資料</div>';
+      return;
+    }
+
+    // KPI
+    const by44 = list.filter(d => d.network_segment?.startsWith('10.44')).length;
+    const by36 = list.filter(d => d.network_segment?.startsWith('10.36')).length;
+    const by66 = list.filter(d => d.network_segment?.startsWith('10.66')).length;
+    $('networkKPI').innerHTML = `
+      <div class="kpi-card"><div class="label">10.44 電腦教室</div><div class="val">${by44}</div><div class="sub">台</div></div>
+      <div class="kpi-card accent"><div class="label">10.36 教學行政</div><div class="val">${by36}</div><div class="sub">台</div></div>
+      <div class="kpi-card success"><div class="label">10.66 無線/移動</div><div class="val">${by66}</div><div class="sub">台</div></div>
+    `;
+
+    applyNetworkFilter();
+  }
+
+  function applyNetworkFilter() {
+    if (!netDevices) return;
+    const kw = ($('netSearch')?.value || '').trim().toLowerCase();
+    const seg = $('netSegment')?.value || '';
+    const role = $('netRole')?.value || '';
+
+    let list = netDevices;
+    if (seg) list = list.filter(d => d.network_segment === seg);
+    if (role) list = list.filter(d => d.device_role === role);
+    if (kw) list = list.filter(d =>
+      (d.name || '').toLowerCase().includes(kw) ||
+      (d.host_address || '').toLowerCase().includes(kw) ||
+      (d.mac_address || '').toLowerCase().includes(kw) ||
+      (d.classroom_code || '').toLowerCase().includes(kw)
+    );
+
+    const roleLabel = {
+      computer_lab_student: '電腦教室學生',
+      computer_lab_teacher: '電腦教室教師',
+      classroom_teacher: '班級教師',
+      classroom_public: '班級公用',
+      admin_office: '行政',
+      mobile_touch: '移動觸屏',
+      unknown: '未分類'
+    };
+
+    if (list.length === 0) {
+      $('netList').innerHTML = '<div class="empty">無符合條件</div>';
+      return;
+    }
+
+    $('netList').innerHTML = `<div class="table-wrap">
+      <table class="data-table">
+        <thead><tr>
+          <th>名稱</th><th>IP 位址</th><th>MAC 位址</th><th>網段</th><th>角色</th><th>教室</th>
+        </tr></thead>
+        <tbody>
+          ${list.slice(0, 500).map(d => `
+            <tr>
+              <td><b>${d.name}</b></td>
+              <td style="font-family:monospace">${d.host_address || '-'}</td>
+              <td style="font-family:monospace;font-size:11px;">${d.mac_address || '-'}</td>
+              <td>${d.network_segment || '-'}</td>
+              <td>${roleLabel[d.device_role] || d.device_role}</td>
+              <td>${d.classroom_code || '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>` + (list.length > 500 ? `<p style="text-align:center;color:var(--text-muted);">僅顯示前 500 筆 (共 ${list.length})</p>` : '');
+  }
+
+  ['netSearch', 'netSegment', 'netRole'].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener('input', applyNetworkFilter);
+    if (el) el.addEventListener('change', applyNetworkFilter);
+  });
+
+  // Tab 切換時載入 network
+  $('tabBar').querySelectorAll('button[data-tab="network"]').forEach(b => {
+    b.addEventListener('click', () => renderNetwork());
+  });
+
+  // ============ 月報表 PDF ============
+  window.generateMonthlyPDF = async () => {
+    const btn = $('btnMonthlyReport');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-inline"></span> 產生中（約 15 秒）…';
+    try {
+      const fname = await window.SMES_MONTHLY_REPORT.generate(
+        cache.inventory, cache.rooms, cache.stats, cache.photos
+      );
+      toast(`✅ 已產生 ${fname}`, 'success');
+    } catch (e) {
+      toast('產生失敗: ' + e.message, 'error');
+      console.error(e);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  };
+
   // ============ Start ============
   loadAll();
 })();
