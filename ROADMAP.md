@@ -1,8 +1,9 @@
 # 📍 石門盤點系統 · 產品 Roadmap
 
 > 最後更新：2026-04-18
-> 目前版本：**v5.0 — 登入 + 平面圖 + QR + 進度條 + 連拍**
+> 目前版本：**v5.0 — 登入 + 平面圖 + QR + 進度條 + 連拍（完整部署上線）**
 > 部署網址：https://cagoooo.github.io/smes-inventory/
+> **登入系統已完成實測，任何非 `@mail2.smes.tyc.edu.tw` 帳號會被自動登出**
 
 ---
 
@@ -41,14 +42,16 @@
 - PWA：manifest.json + icon.svg（可加到 iPhone 主畫面）
 - 最小觸控區 48×48px（符合 Apple HIG）
 
-### 🔐 v5.0 — 登入 + 平面圖 + QR + 進度條 + 連拍 (2026-04-18)
-- **Google OAuth 登入**（限 `@mail2.smes.tyc.edu.tw` 網域）
+### 🔐 v5.0 — 登入 + 平面圖 + QR + 進度條 + 連拍 (2026-04-18) ✅ 全部部署上線
+- **Google OAuth 登入**（限 `@mail2.smes.tyc.edu.tw` 網域）✅ 實測通過
   - Supabase Auth + JS SDK
-  - Google Workspace `hd` 參數（後端強制網域）
+  - Google Workspace `hd` 參數（後端強制網域）— 已驗證：登入頁只顯示 `@mail2.smes.tyc.edu.tw` 帳號
   - 前端 domain 檢查（前端防線）
   - `created_by` 欄位記錄每筆拍照是誰拍的
-  - profile 自動建立 trigger
-  - RLS 升級：authenticated 角色全讀，photo_records 刪除/修改需為原拍攝者
+  - profile 自動建立 trigger — 已驗證：`ipad@mail2.smes.tyc.edu.tw` 首登入後 `profiles.domain_ok=true`
+  - RLS 升級：anon policies 已移除，只有 authenticated 角色可讀寫
+  - Google Cloud 專案：`smes-e1dc3`、OAuth Client ID `626362737802-nv8ce12...`
+  - Chrome MCP 全自動化完成 OAuth Client 建立 + Supabase Provider 啟用 + URL Configuration
 - **教室平面圖可視化**（點教室直接選）
   - 3 樓 + 2 樓 + 1 樓 + 幼兒園
   - 依區塊（北走廊 / 東翼 / 西翼）排列
@@ -193,7 +196,7 @@
 ## 🛠️ 技術債與基礎建設
 
 ### 需重構或優化
-- [ ] 目前 RLS 是 anon 全開，**需改成登入後才可寫**（依 v5 Google OAuth）
+- [x] ~~目前 RLS 是 anon 全開，**需改成登入後才可寫**~~ ✅ v5.0 完成 (2026-04-18)
 - [ ] inventory_items 的 raw_data jsonb 可壓縮（目前約 200KB/筆 × 247 = 50MB）
 - [ ] Edge Function 加 **rate limit**（目前沒限流，Gemini 可能被打爆）
 - [ ] 加 **錯誤回報**：前端 error 自動送到 Supabase logs
