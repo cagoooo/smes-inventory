@@ -55,6 +55,11 @@
       renderPhotos();
       renderRooms();
       renderInventory();
+
+      // 儀表板（首個 tab，預設顯示）
+      if (window.SMES_DASHBOARD) {
+        await window.SMES_DASHBOARD.render(inventory, rooms);
+      }
     } catch (e) {
       toast('載入失敗: ' + e.message, 'error');
       console.error(e);

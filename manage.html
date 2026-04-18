@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -60,14 +61,98 @@
 
   <!-- Tab Bar -->
   <div class="tab-bar" id="tabBar">
-    <button class="active" data-tab="photos">📷 拍照</button>
+    <button class="active" data-tab="dashboard">📈 儀表板</button>
+    <button data-tab="photos">📷 拍照</button>
     <button data-tab="rooms">🏫 教室</button>
     <button data-tab="inv">📦 財產</button>
     <button data-tab="import">📥 匯入</button>
   </div>
 
+  <!-- Tab: 儀表板 -->
+  <div class="tab-content" id="tab-dashboard">
+
+    <!-- KPI 條 -->
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="label">總財產</div><div class="val" id="kpiTotal">-</div><div class="sub">台</div></div>
+      <div class="kpi-card accent"><div class="label">平均機齡</div><div class="val" id="kpiAvgAge">-</div><div class="sub">年</div></div>
+      <div class="kpi-card danger"><div class="label">建議汰換</div><div class="val" id="kpiReplace">-</div><div class="sub">台 (≥8 年)</div></div>
+      <div class="kpi-card success"><div class="label">新穎設備</div><div class="val" id="kpiNew">-</div><div class="sub">台 (&lt;3 年)</div></div>
+    </div>
+
+    <!-- 圖表網格 -->
+    <div class="dash-grid">
+
+      <div class="chart-card">
+        <h3>🥧 廠牌佔比</h3>
+        <div class="chart-wrap"><canvas id="chartBrand"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>⚠️ 汰換急迫性分布</h3>
+        <div class="chart-wrap"><canvas id="chartUrgency"></canvas></div>
+      </div>
+
+      <div class="chart-card full">
+        <h3>📅 年度購置台數</h3>
+        <div class="chart-wrap" style="height:280px;"><canvas id="chartYear"></canvas></div>
+      </div>
+
+      <div class="chart-card full">
+        <h3>📉 機齡分佈 & 汰換趨勢預測</h3>
+        <div class="chart-wrap" style="height:280px;"><canvas id="chartAge"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>🏫 教室設備密度 TOP 10</h3>
+        <div class="chart-wrap"><canvas id="chartRoomTop"></canvas></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>🏢 保管單位佔比</h3>
+        <div class="chart-wrap"><canvas id="chartUnit"></canvas></div>
+      </div>
+
+      <div class="chart-card full">
+        <h3>🗺 校園熱度地圖（顏色深淺 = 設備密度）</h3>
+        <div id="heatmapView"></div>
+      </div>
+
+      <!-- 預算試算工具 -->
+      <div class="chart-card full">
+        <h3>💰 汰換預算試算工具</h3>
+        <div class="budget-calc">
+          <div class="slider-row">
+            <div class="slider-label">汰換門檻（機齡 ≥ <b id="thresholdVal">8</b> 年）</div>
+            <input type="range" id="thresholdSlider" min="3" max="18" value="8" class="fancy-slider">
+            <div class="slider-marks"><span>3</span><span>5</span><span>8</span><span>12</span><span>18</span></div>
+          </div>
+          <div class="slider-row">
+            <div class="slider-label">每台採購單價（新台幣）NT$ <b id="unitPriceVal">25,000</b></div>
+            <input type="range" id="unitPriceSlider" min="15000" max="45000" step="1000" value="25000" class="fancy-slider">
+          </div>
+          <div class="budget-result" id="budgetResult"></div>
+          <div id="budgetBreakdown"></div>
+        </div>
+      </div>
+
+      <!-- 機型壽命統計 -->
+      <div class="chart-card full">
+        <h3>⏱ 設備壽命統計（同機型平均使用年限）</h3>
+        <div class="table-wrap">
+          <table class="data-table" id="lifespanTable">
+            <thead><tr>
+              <th>標準化機型</th><th>廠牌</th><th>台數</th><th>平均機齡</th><th>最老</th><th>最新</th><th>建議</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- Tab: 拍照紀錄 -->
-  <div class="tab-content" id="tab-photos">
+  <div class="tab-content" id="tab-photos" style="display:none;">
     <div class="search-wrap" style="margin-bottom:8px;">
       <input id="photoSearch" type="text" placeholder="搜尋教室 / 型號 / 財產編號">
     </div>
@@ -149,12 +234,13 @@
 <script src="config.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/supabase-client.js"></script>
+<script src="js/floorplan.js"></script>
+<script src="js/dashboard.js"></script>
 <script>
   SMES_AUTH.initClient();
   SMES_AUTH.initSession();
   SMES_AUTH.onReady(user => {
     if (user) {
-      // 登入後才載 manage.js
       const s = document.createElement('script');
       s.src = 'js/manage.js';
       document.body.appendChild(s);
