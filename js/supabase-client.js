@@ -1,17 +1,22 @@
-// Supabase REST client — 直接用 fetch 不引入 SDK，保持輕量
+// Supabase REST client — 直接用 fetch，若已登入會帶使用者的 access_token
 (function() {
   const C = window.SMES_CONFIG;
-  const H_BASE = {
-    apikey: C.SUPABASE_ANON_KEY,
-    Authorization: `Bearer ${C.SUPABASE_ANON_KEY}`,
-    'Content-Type': 'application/json'
-  };
+
+  function getHeaders() {
+    // 優先用使用者的 access_token；沒登入則用 anon key
+    const userToken = window.SMES_AUTH?.getAccessToken?.();
+    return {
+      apikey: C.SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${userToken || C.SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json'
+    };
+  }
 
   async function rest(path, opts = {}) {
     const url = `${C.SUPABASE_URL}/rest/v1/${path}`;
     const res = await fetch(url, {
       ...opts,
-      headers: { ...H_BASE, ...(opts.headers || {}) }
+      headers: { ...getHeaders(), ...(opts.headers || {}) }
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => res.statusText);
@@ -23,11 +28,12 @@
 
   async function uploadPhoto(file, path) {
     const url = `${C.SUPABASE_URL}/storage/v1/object/${C.STORAGE_BUCKET}/${path}`;
+    const userToken = window.SMES_AUTH?.getAccessToken?.();
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         apikey: C.SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${C.SUPABASE_ANON_KEY}`,
+        Authorization: `Bearer ${userToken || C.SUPABASE_ANON_KEY}`,
         'Content-Type': file.type || 'image/jpeg',
         'x-upsert': 'true'
       },
@@ -46,9 +52,10 @@
 
   async function deletePhotoFile(path) {
     const url = `${C.SUPABASE_URL}/storage/v1/object/${C.STORAGE_BUCKET}/${path}`;
+    const userToken = window.SMES_AUTH?.getAccessToken?.();
     await fetch(url, {
       method: 'DELETE',
-      headers: { apikey: C.SUPABASE_ANON_KEY, Authorization: `Bearer ${C.SUPABASE_ANON_KEY}` }
+      headers: { apikey: C.SUPABASE_ANON_KEY, Authorization: `Bearer ${userToken || C.SUPABASE_ANON_KEY}` }
     });
   }
 

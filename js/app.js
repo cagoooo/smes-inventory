@@ -85,11 +85,38 @@
     renderCatChips();
     renderRoomGrid();
     renderRecent();
+    await loadGlobalProgress();
 
     const savedCode = localStorage.getItem(STORAGE_CUR_ROOM);
     if (savedCode) {
       const r = state.rooms.find(x => x.code === savedCode);
       if (r) selectRoom(r, true);
+    }
+  }
+
+  // ============ 全校進度 ============
+  async function loadGlobalProgress() {
+    try {
+      const stats = await window.SMES_DB.getClassroomStats();
+      state.stats = stats;
+      // 只算「有財產的教室」為總數
+      const roomsWithInv = stats.filter(s => (s.inventory_count || 0) > 0);
+      const roomsWithPhoto = roomsWithInv.filter(s => (s.photo_count || 0) > 0);
+      const totalInv = stats.reduce((s, x) => s + (x.inventory_count || 0), 0);
+      const totalPhoto = stats.reduce((s, x) => s + (x.photo_count || 0), 0);
+
+      const pct = roomsWithInv.length > 0 ?
+        Math.round(roomsWithPhoto.length / roomsWithInv.length * 100) : 0;
+
+      const bar = $('globalProgressBar');
+      const lbl = $('globalProgressLabel');
+      if (bar && lbl) {
+        bar.style.width = pct + '%';
+        bar.className = 'progress-fill ' + (pct >= 100 ? 'done' : pct >= 50 ? 'half' : 'start');
+        lbl.innerHTML = `<b>${roomsWithPhoto.length}</b> / ${roomsWithInv.length} 教室 · <b>${totalPhoto}</b> / ${totalInv} 台`;
+      }
+    } catch (e) {
+      console.warn('loadGlobalProgress:', e);
     }
   }
 
@@ -192,6 +219,21 @@
       $('pillPhoto').textContent = `📷 ${photos.length}`;
       $('roomRecordCount').textContent = `(${photos.length})`;
 
+      // 本教室進度條：photos / inventory
+      const pct = inventory.length > 0 ? Math.min(100, Math.round(photos.length / inventory.length * 100)) : 0;
+      const bar = $('roomProgressBar');
+      const lbl = $('roomProgressLabel');
+      if (bar && lbl) {
+        if (inventory.length === 0) {
+          bar.parentElement.style.display = 'none';
+        } else {
+          bar.parentElement.style.display = 'block';
+          bar.style.width = pct + '%';
+          bar.className = 'progress-fill ' + (pct >= 100 ? 'done' : pct >= 50 ? 'half' : 'start');
+          lbl.textContent = `${photos.length} / ${inventory.length} (${pct}%)`;
+        }
+      }
+
       if (photos.length === 0) {
         $('roomRecords').innerHTML = `
           <div class="empty">
@@ -237,11 +279,55 @@
   };
 
   // ============ Bottom Sheet ============
+  let currentView = 'list';
+
+  function renderFloorplanView() {
+    if (!window.SMES_FLOORPLAN) return;
+    const el = window.SMES_FLOORPLAN.renderAll(
+      state.rooms,
+      state.stats || [],
+      (code) => {
+        const r = state.rooms.find(x => x.code === code);
+        if (r) selectRoom(r);
+      },
+      state.currentRoom?.code
+    );
+    const wrap = $('floorplanView');
+    wrap.innerHTML = '';
+    wrap.appendChild(el);
+  }
+
+  // 切換檢視
+  document.querySelectorAll('#viewToggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#viewToggle button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentView = btn.dataset.view;
+      if (currentView === 'floorplan') {
+        $('listFilters').style.display = 'none';
+        $('roomGrid').style.display = 'none';
+        $('floorplanView').style.display = 'block';
+        renderFloorplanView();
+      } else {
+        $('listFilters').style.display = 'block';
+        $('roomGrid').style.display = 'grid';
+        $('floorplanView').style.display = 'none';
+      }
+      vibrate(10);
+    });
+  });
+
   window.openRoomSheet = () => {
     $('roomSheet').classList.add('show');
     $('sheetBackdrop').classList.add('show');
     document.body.style.overflow = 'hidden';
-    setTimeout(() => $('roomSearch').focus({ preventScroll: true }), 300);
+    // 已選過教室的用戶預設打開平面圖（視覺化優先）
+    if (state.currentRoom && currentView !== 'floorplan') {
+      document.querySelector('#viewToggle button[data-view="floorplan"]').click();
+    }
+    if (currentView === 'list') {
+      setTimeout(() => $('roomSearch').focus({ preventScroll: true }), 300);
+    }
   };
   window.closeRoomSheet = () => {
     $('roomSheet').classList.remove('show');
@@ -275,8 +361,21 @@
       const { parsed, raw, compressed } = await window.SMES_GEMINI.recognize(f);
       state.currentFile = compressed;
       state.lastDetection = { parsed, raw };
+
+      // 如果剛剛透過 QR 掃過，強制覆蓋財產編號（QR 比 AI 準）
+      if (state.qrPrefill) {
+        parsed.property_number = state.qrPrefill.property_number;
+      }
+
       fillDetectFields(parsed);
       await showMatchSuggestions(parsed);
+
+      // QR 預填了 matched_inventory_id 的話直接選上該建議
+      if (state.qrPrefill?.matched_inventory_id) {
+        const el = document.querySelector(`.match-suggest[data-id="${state.qrPrefill.matched_inventory_id}"]`);
+        if (el) el.classList.add('selected');
+      }
+      state.qrPrefill = null;
       $('recognizeLoading').style.display = 'none';
       $('detectArea').style.display = 'block';
       toast('✨ 辨識完成，請檢查後儲存', 'success');
@@ -453,6 +552,7 @@
       const rocYearStr = getVal('f_roc_year');
       const rocYear = rocYearStr ? parseInt(rocYearStr) : null;
 
+      const user = window.SMES_AUTH?.getUser?.();
       await window.SMES_DB.insertPhoto({
         classroom_code: room.code,
         photo_path: fileName,
@@ -468,7 +568,8 @@
         matched_inventory_id: matched_id,
         match_method: matched_id ? 'manual' : null,
         notes: getVal('f_notes'),
-        device_label: getDeviceLabel()
+        device_label: getDeviceLabel(),
+        created_by: user?.id || null
       });
 
       toast('✅ 已儲存，可繼續拍下一張', 'success');
@@ -478,7 +579,16 @@
       state.lastDetection = null;
       $('previewPanel').style.display = 'none';
       $('photoInput').value = '';
+      if ($('photoInputDesktop')) $('photoInputDesktop').value = '';
       await loadRoomRecords();
+      await loadGlobalProgress();
+
+      // 連續拍照模式：儲存成功後自動開相機繼續拍
+      if ($('continuousMode')?.checked) {
+        setTimeout(() => {
+          ($('photoInputDesktop') || $('photoInput')).click();
+        }, 500);
+      }
     } catch (e) {
       toast('儲存失敗: ' + e.message, 'error');
       console.error(e);
@@ -514,6 +624,103 @@
     if (dy > 80) { closeRoomSheet(); sheetTouch = null; }
   });
   $('roomSheet').addEventListener('touchend', () => { sheetTouch = null; });
+
+  // ============ QR Code 掃描 ============
+  let qrScanner = null;
+
+  window.openQRScanner = async () => {
+    if (!state.currentRoom) { toast('請先選教室', 'error'); return; }
+    $('qrSheet').classList.add('show');
+    $('qrBackdrop').classList.add('show');
+    $('qrResult').style.display = 'none';
+    document.body.style.overflow = 'hidden';
+
+    if (!window.Html5Qrcode) {
+      toast('QR 套件未載入', 'error');
+      return;
+    }
+
+    try {
+      qrScanner = new window.Html5Qrcode('qrReader');
+      const cameras = await window.Html5Qrcode.getCameras();
+      if (!cameras.length) {
+        toast('找不到相機', 'error');
+        return;
+      }
+      // 優先後置鏡頭
+      const camId = cameras.find(c => /back|rear|environment/i.test(c.label))?.id || cameras[0].id;
+
+      await qrScanner.start(
+        camId,
+        { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
+        (decoded) => { handleQRResult(decoded); },
+        () => {} // 掃描錯誤回呼忽略
+      );
+    } catch (e) {
+      toast('相機開啟失敗: ' + e.message, 'error');
+      console.error(e);
+    }
+  };
+
+  window.closeQRScanner = async () => {
+    if (qrScanner) {
+      try { await qrScanner.stop(); await qrScanner.clear(); } catch {}
+      qrScanner = null;
+    }
+    $('qrSheet').classList.remove('show');
+    $('qrBackdrop').classList.remove('show');
+    document.body.style.overflow = '';
+  };
+
+  async function handleQRResult(decoded) {
+    // 從 QR 內容萃取財產編號（可能是純數字、URL 帶參數、或 JSON）
+    let pn = decoded.trim();
+    // 如果是 URL 嘗試抓 query string 中的 property number
+    const urlMatch = pn.match(/[?&](?:id|pn|no|property)=(\d{4,8})/i);
+    if (urlMatch) pn = urlMatch[1];
+    // 純數字格式的財產編號（6-8 位）
+    const numMatch = pn.match(/^0?0?\d{4,6}$/);
+    if (numMatch) pn = numMatch[0];
+    // 去除非數字/英數字
+    if (pn.length > 20) pn = pn.slice(0, 20);
+
+    vibrate([40, 30, 40]);
+    $('qrResultText').textContent = pn;
+    $('qrResult').style.display = 'block';
+
+    // 查詢既有財產
+    try {
+      const matches = await window.SMES_DB.searchInventory(pn);
+      const match = matches.find(m => m.property_number === pn) || matches[0];
+      if (match) {
+        $('qrMatchInfo').innerHTML = `✅ 在財產清冊找到：<b>${match.brand||''} ${match.model||''}</b>` +
+          (match.acquired_year ? ` · 取得 ${match.acquired_year} 年` : '') +
+          (match.classroom_code ? ` · 位於 ${match.classroom_code}` : '') +
+          `<br><button class="btn btn-success btn-block" style="margin-top:8px;" onclick="useQRMatch(${match.id}, '${pn}')">✓ 使用這筆 + 馬上拍照</button>`;
+      } else {
+        $('qrMatchInfo').innerHTML = `⚠️ 財產清冊找不到此編號。<br>
+          <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="useQRNumber('${pn}')">📷 仍用此編號開始拍照</button>`;
+      }
+    } catch (e) {
+      $('qrMatchInfo').innerHTML = `查詢失敗：${e.message}`;
+    }
+
+    // 停止掃描以免重複觸發
+    if (qrScanner) {
+      try { await qrScanner.pause(true); } catch {}
+    }
+  }
+
+  window.useQRMatch = (invId, pn) => {
+    state.qrPrefill = { property_number: pn, matched_inventory_id: invId };
+    closeQRScanner();
+    setTimeout(() => ($('photoInputDesktop') || $('photoInput')).click(), 300);
+  };
+  window.useQRNumber = (pn) => {
+    state.qrPrefill = { property_number: pn, matched_inventory_id: null };
+    closeQRScanner();
+    setTimeout(() => ($('photoInputDesktop') || $('photoInput')).click(), 300);
+  };
 
   // ============ 快捷鍵說明 ============
   const helpBtn = $('helpBtn');
