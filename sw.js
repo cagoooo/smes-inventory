@@ -3,7 +3,7 @@
 //   - 靜態資源 (HTML/CSS/JS/icon/CDN)：cache-first
 //   - Supabase REST/Storage API：network-first，失敗則讀 cache
 //   - 照片 URL (Supabase Storage CDN)：stale-while-revalidate
-const CACHE_VERSION = 'smes-v6-2026-04-18';
+const CACHE_VERSION = 'smes-v7-2026-04-18b';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const DATA_CACHE = `data-${CACHE_VERSION}`;
 const PHOTO_CACHE = `photo-${CACHE_VERSION}`;
@@ -61,6 +61,12 @@ self.addEventListener('fetch', (e) => {
   // 只處理 GET
   if (req.method !== 'GET') return;
 
+  // Cache API 只支援 http(s)，跳過 chrome-extension: / data: / blob: 等特殊協定
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+  // 跳過瀏覽器擴充的 request
+  if (url.hostname === 'chrome-extension' || url.protocol.startsWith('chrome')) return;
+
   // === Supabase REST API ===
   if (url.hostname.endsWith('.supabase.co') && url.pathname.startsWith('/rest/v1/')) {
     e.respondWith(networkFirstWithFallback(req, DATA_CACHE));
@@ -90,13 +96,23 @@ self.addEventListener('fetch', (e) => {
 });
 
 // ============ Strategies ============
+// 只 cache http(s) 且 status 為 200 的完整 response（避免 partial/opaque 大小錯誤）
+function isCacheable(req, res) {
+  if (!res || !res.ok) return false;
+  const url = new URL(req.url);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+  return true;
+}
+
 async function cacheFirst(req, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(req);
   if (cached) return cached;
   try {
     const res = await fetch(req);
-    if (res.ok) cache.put(req, res.clone());
+    if (isCacheable(req, res)) {
+      try { await cache.put(req, res.clone()); } catch (e) { /* ignore cache errors */ }
+    }
     return res;
   } catch (e) {
     return cached || Response.error();
@@ -107,7 +123,9 @@ async function networkFirstWithFallback(req, cacheName) {
   const cache = await caches.open(cacheName);
   try {
     const res = await fetch(req);
-    if (res.ok) cache.put(req, res.clone());
+    if (isCacheable(req, res)) {
+      try { await cache.put(req, res.clone()); } catch (e) { /* ignore */ }
+    }
     return res;
   } catch (e) {
     const cached = await cache.match(req);
@@ -126,7 +144,9 @@ async function staleWhileRevalidate(req, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(req);
   const fetchPromise = fetch(req).then(res => {
-    if (res.ok) cache.put(req, res.clone());
+    if (isCacheable(req, res)) {
+      try { cache.put(req, res.clone()); } catch (e) { /* ignore */ }
+    }
     return res;
   }).catch(() => cached);
   return cached || fetchPromise;

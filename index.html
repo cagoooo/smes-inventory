@@ -330,14 +330,16 @@
   <div class="modal">
     <h3>🔑 需要 Gemini API Key</h3>
     <p>代理伺服器暫時無法使用，請貼上你的個人 Gemini API Key（只存在本機）。</p>
-    <div class="field" style="margin-top:10px;">
-      <label>API Key</label>
-      <input type="password" id="apiKeyInput" placeholder="AIzaSy...">
-    </div>
-    <div class="actions">
-      <button class="btn btn-ghost" onclick="document.getElementById('apiKeyModal').classList.remove('show')">取消</button>
-      <button class="btn btn-primary" onclick="saveApiKey()">儲存並重試</button>
-    </div>
+    <form onsubmit="event.preventDefault(); saveApiKey();" autocomplete="off">
+      <div class="field" style="margin-top:10px;">
+        <label for="apiKeyInput">API Key</label>
+        <input type="password" id="apiKeyInput" name="apiKey" placeholder="AIzaSy..." autocomplete="off">
+      </div>
+      <div class="actions">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('apiKeyModal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">儲存並重試</button>
+      </div>
+    </form>
   </div>
 </div>
 
