@@ -1,24 +1,29 @@
-// 主程式：首頁拍照上傳流程
+// 主程式：手機優化版
 (function() {
   const STORAGE_CUR_ROOM = 'smes_current_room';
+  const STORAGE_RECENT = 'smes_recent_rooms';
   const STORAGE_DEVICE = 'smes_device_label';
 
   let state = {
     rooms: [],
     currentRoom: null,
     currentFloor: null,
+    currentCat: '',
     currentFile: null,
-    lastDetection: null
+    lastDetection: null,
   };
 
   // ============ Utilities ============
-  function $(id) { return document.getElementById(id); }
+  const $ = id => document.getElementById(id);
+  function vibrate(pattern) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch {}
+  }
   function toast(msg, type = '') {
     const t = $('toast');
     t.textContent = msg;
     t.className = 'toast show ' + type;
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.classList.remove('show'), 3000);
+    toast._t = setTimeout(() => t.classList.remove('show'), 2800);
   }
   function getDeviceLabel() {
     let l = localStorage.getItem(STORAGE_DEVICE);
@@ -28,63 +33,116 @@
     }
     return l;
   }
-
   function yearBadge(rocYear) {
     if (!rocYear) return '';
     const curRoc = 115;
     const age = curRoc - rocYear;
-    if (age >= 8) return `<span class="badge badge-old">${rocYear}年 · 建議汰換</span>`;
-    if (age >= 5) return `<span class="badge badge-mid">${rocYear}年 · 關注</span>`;
+    if (age >= 8) return `<span class="badge badge-old">${rocYear}年·汰</span>`;
+    if (age >= 5) return `<span class="badge badge-mid">${rocYear}年</span>`;
     return `<span class="badge badge-new">${rocYear}年</span>`;
   }
 
-  // ============ 教室清單載入 ============
+  const FLOOR_NAMES = { 0: '幼兒園', 1: '一樓', 2: '二樓', 3: '三樓' };
+  const CAT_NAMES = {
+    class: '班級', subject: '專科', admin: '行政',
+    care: '課照', kindergarten: '幼兒園', other: '其他'
+  };
+
+  // ============ 最近使用教室 ============
+  function pushRecent(code) {
+    let list = JSON.parse(localStorage.getItem(STORAGE_RECENT) || '[]');
+    list = [code, ...list.filter(c => c !== code)].slice(0, 6);
+    localStorage.setItem(STORAGE_RECENT, JSON.stringify(list));
+  }
+  function getRecent() {
+    return JSON.parse(localStorage.getItem(STORAGE_RECENT) || '[]');
+  }
+  function renderRecent() {
+    const codes = getRecent();
+    if (!codes.length || !state.rooms.length) {
+      $('recentChips').innerHTML = '<span style="color:var(--text-muted);font-size:13px;">尚無最近紀錄</span>';
+      return;
+    }
+    $('recentChips').innerHTML = codes
+      .map(code => state.rooms.find(r => r.code === code))
+      .filter(Boolean)
+      .map(r => `
+        <button class="recent-chip" onclick="quickSelectRoom('${r.code}')">
+          <span class="c">${r.code}</span>
+          <span>${r.name}</span>
+        </button>
+      `).join('');
+  }
+  window.quickSelectRoom = code => {
+    const r = state.rooms.find(x => x.code === code);
+    if (r) selectRoom(r);
+  };
+
+  // ============ 載入教室 ============
   async function loadRooms() {
     state.rooms = await window.SMES_DB.listClassrooms();
     renderFloors();
+    renderCatChips();
     renderRoomGrid();
+    renderRecent();
 
-    // 載入上次選擇的教室
     const savedCode = localStorage.getItem(STORAGE_CUR_ROOM);
     if (savedCode) {
       const r = state.rooms.find(x => x.code === savedCode);
-      if (r) selectRoom(r);
+      if (r) selectRoom(r, true);
     }
   }
 
   function renderFloors() {
     const floors = [...new Set(state.rooms.map(r => r.floor))].sort();
-    const labels = { 0: '幼兒園', 1: '一樓', 2: '二樓', 3: '三樓' };
-    $('floorTabs').innerHTML = '<button class="active" data-floor="">全部</button>' +
-      floors.map(f => `<button data-floor="${f}">${labels[f] || f+'樓'}</button>`).join('');
+    $('floorTabs').innerHTML =
+      '<button class="active" data-floor="">全部</button>' +
+      floors.map(f => `<button data-floor="${f}">${FLOOR_NAMES[f] || f + 'F'}</button>`).join('');
     $('floorTabs').querySelectorAll('button').forEach(b => {
       b.addEventListener('click', () => {
         $('floorTabs').querySelectorAll('button').forEach(x => x.classList.remove('active'));
         b.classList.add('active');
         state.currentFloor = b.dataset.floor === '' ? null : parseInt(b.dataset.floor);
         renderRoomGrid();
+        vibrate(10);
+      });
+    });
+  }
+
+  function renderCatChips() {
+    const cats = ['', 'class', 'subject', 'admin', 'care', 'kindergarten'];
+    $('catChips').innerHTML = cats.map(c => `
+      <button class="${state.currentCat === c ? 'active' : ''}" data-cat="${c}">
+        ${c === '' ? '全部類別' : CAT_NAMES[c]}
+      </button>
+    `).join('');
+    $('catChips').querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => {
+        state.currentCat = b.dataset.cat;
+        renderCatChips();
+        renderRoomGrid();
+        vibrate(10);
       });
     });
   }
 
   function renderRoomGrid() {
     const kw = $('roomSearch').value.trim().toLowerCase();
-    const cat = $('catFilter').value;
-
     const filtered = state.rooms.filter(r => {
       if (state.currentFloor !== null && r.floor !== state.currentFloor) return false;
-      if (cat && r.category !== cat) return false;
+      if (state.currentCat && r.category !== state.currentCat) return false;
       if (kw && !r.code.toLowerCase().includes(kw) && !r.name.toLowerCase().includes(kw)) return false;
       return true;
     });
 
     if (filtered.length === 0) {
-      $('roomGrid').innerHTML = '<div class="empty">無符合條件的教室</div>';
+      $('roomGrid').innerHTML = '<div class="empty"><div class="icon">🔍</div>無符合條件的教室</div>';
       return;
     }
 
     $('roomGrid').innerHTML = filtered.map(r => `
-      <button class="room-btn cat-${r.category}" data-code="${r.code}">
+      <button class="room-btn cat-${r.category} ${state.currentRoom?.code === r.code ? 'active' : ''}"
+              data-code="${r.code}">
         <div class="code">${r.code}</div>
         <div class="name">${r.name}</div>
       </button>
@@ -94,82 +152,102 @@
       b.addEventListener('click', () => {
         const r = state.rooms.find(x => x.code === b.dataset.code);
         selectRoom(r);
+        vibrate([10, 20]);
       });
     });
   }
 
   // ============ 選擇教室 ============
-  async function selectRoom(r) {
+  async function selectRoom(r, silent = false) {
     state.currentRoom = r;
     localStorage.setItem(STORAGE_CUR_ROOM, r.code);
+    pushRecent(r.code);
 
-    $('roomSelectCard').style.display = 'none';
+    $('welcomeState').style.display = 'none';
     $('currentRoomPanel').style.display = 'block';
+    $('bottomCta').style.display = 'block';
     $('curRoomName').textContent = r.name;
-    $('curRoomCode').textContent = r.code + ' · ' + (r.floor === 0 ? '幼兒園' : r.floor + '樓');
-
-    // 隱藏預覽
-    $('previewArea').classList.remove('active');
+    $('pillCode').textContent = '#' + r.code;
+    $('pillFloor').textContent = FLOOR_NAMES[r.floor] || r.floor + 'F';
+    $('previewPanel').style.display = 'none';
     state.currentFile = null;
 
+    closeRoomSheet();
     await loadRoomRecords();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!silent) {
+      toast(`📍 已切換到 ${r.name}`, 'success');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   }
 
   async function loadRoomRecords() {
     const code = state.currentRoom.code;
-    const [photos, inventory] = await Promise.all([
-      window.SMES_DB.listPhotosByRoom(code, 50),
-      window.SMES_DB.listInventoryByRoom(code)
-    ]);
+    try {
+      const [photos, inventory] = await Promise.all([
+        window.SMES_DB.listPhotosByRoom(code, 50),
+        window.SMES_DB.listInventoryByRoom(code)
+      ]);
 
-    $('curRoomStats').innerHTML =
-      `📷 拍照紀錄 ${photos.length} · 📦 財產 ${inventory.length}`;
-    $('roomRecordCount').textContent = `(${photos.length})`;
+      $('pillInv').textContent = `📦 ${inventory.length}`;
+      $('pillPhoto').textContent = `📷 ${photos.length}`;
+      $('roomRecordCount').textContent = `(${photos.length})`;
 
-    if (photos.length === 0) {
-      $('roomRecords').innerHTML = '<div class="empty">尚無紀錄，點上方「拍攝」新增</div>';
-      return;
-    }
+      if (photos.length === 0) {
+        $('roomRecords').innerHTML = `
+          <div class="empty">
+            <div class="icon">📷</div>
+            尚無紀錄<br>
+            <small>點下方按鈕開始拍攝</small>
+          </div>`;
+        return;
+      }
 
-    $('roomRecords').innerHTML = photos.map(p => `
-      <div class="record-item" data-id="${p.id}">
-        ${p.photo_url ? `<img src="${p.photo_url}" loading="lazy" onerror="this.style.display='none'">` : ''}
-        <div class="info">
-          <div class="model">${p.detected_brand || ''} ${p.detected_model || '(未填型號)'}</div>
-          <div class="meta">
-            ${p.detected_property_number ? `<span class="tag">🏷 ${p.detected_property_number}</span>` : ''}
-            ${p.photo_type ? `<span class="tag">${p.photo_type}</span>` : ''}
-            ${yearBadge(p.detected_year)}
-            ${p.matched_inventory_id ? '<span class="tag" style="background:var(--success-soft);color:#146c3a;">✓ 已比對</span>' : ''}
+      $('roomRecords').innerHTML = photos.map(p => `
+        <div class="record-item">
+          ${p.photo_url ? `<img src="${p.photo_url}" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:54px;height:54px;background:var(--bg);border-radius:8px;"></div>'}
+          <div class="info">
+            <div class="model">${p.detected_brand || ''} ${p.detected_model || '(未填型號)'}</div>
+            <div class="meta">
+              ${p.detected_property_number ? `<span class="tag">🏷 ${p.detected_property_number}</span>` : ''}
+              ${p.photo_type ? `<span class="tag">${p.photo_type}</span>` : ''}
+              ${yearBadge(p.detected_year)}
+              ${p.matched_inventory_id ? '<span class="tag" style="background:var(--success-soft);color:var(--success);">✓ 已比對</span>' : ''}
+            </div>
           </div>
+          <button class="del" onclick="deletePhoto(${p.id}, '${p.photo_path || ''}')">🗑</button>
         </div>
-        <button class="del" title="刪除" onclick="deletePhoto(${p.id}, '${p.photo_path || ''}')">🗑</button>
-      </div>
-    `).join('');
+      `).join('');
+    } catch (e) {
+      console.error(e);
+      $('roomRecords').innerHTML = `<div class="empty">載入失敗: ${e.message}</div>`;
+    }
   }
 
-  async function deletePhoto(id, path) {
-    if (!confirm('確認刪除這筆紀錄？')) return;
+  window.deletePhoto = async (id, path) => {
+    if (!confirm('確認刪除？')) return;
     try {
       await window.SMES_DB.deletePhoto(id);
       if (path) window.SMES_DB.deletePhotoFile(path);
       toast('已刪除', 'success');
+      vibrate(15);
       loadRoomRecords();
     } catch (e) {
-      toast('刪除失敗: ' + e.message, 'error');
+      toast('刪除失敗', 'error');
     }
-  }
-  window.deletePhoto = deletePhoto;
+  };
 
-  function changeRoom() {
-    $('currentRoomPanel').style.display = 'none';
-    $('roomSelectCard').style.display = 'block';
-    $('previewArea').classList.remove('active');
-    state.currentFile = null;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-  window.changeRoom = changeRoom;
+  // ============ Bottom Sheet ============
+  window.openRoomSheet = () => {
+    $('roomSheet').classList.add('show');
+    $('sheetBackdrop').classList.add('show');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => $('roomSearch').focus({ preventScroll: true }), 300);
+  };
+  window.closeRoomSheet = () => {
+    $('roomSheet').classList.remove('show');
+    $('sheetBackdrop').classList.remove('show');
+    document.body.style.overflow = '';
+  };
 
   // ============ 拍照 ============
   $('photoInput').addEventListener('change', async (e) => {
@@ -177,53 +255,40 @@
     if (!f) return;
     state.currentFile = f;
     state.lastDetection = null;
+
     $('previewImg').src = URL.createObjectURL(f);
-    $('previewArea').classList.add('active');
+    $('previewPanel').style.display = 'block';
     $('detectArea').style.display = 'none';
+    $('recognizeLoading').style.display = 'flex';
     $('matchArea').innerHTML = '';
-    setTimeout(() => $('previewArea').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-  });
+    vibrate([15, 10, 15]);
 
-  document.addEventListener('click', (e) => {
-    if (e.target.id === 'btnRetake') {
-      $('photoInput').value = '';
-      $('photoInput').click();
-    }
-  });
-
-  // ============ Gemini 辨識 ============
-  $('btnRecognize').addEventListener('click', async () => {
-    if (!state.currentFile) return;
-
-    if (!window.SMES_GEMINI.hasKey()) {
-      $('apiKeyInput').value = '';
-      $('apiKeyModal').classList.add('show');
-      return;
-    }
-
-    const btn = $('btnRecognize');
-    const origHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="loading"></span> AI 辨識中…';
-
+    // 自動啟動辨識
     try {
-      const { parsed, raw, compressed } = await window.SMES_GEMINI.recognize(state.currentFile);
-      state.currentFile = compressed; // 存壓縮後
+      const { parsed, raw, compressed } = await window.SMES_GEMINI.recognize(f);
+      state.currentFile = compressed;
       state.lastDetection = { parsed, raw };
       fillDetectFields(parsed);
       await showMatchSuggestions(parsed);
+      $('recognizeLoading').style.display = 'none';
       $('detectArea').style.display = 'block';
-      toast('辨識完成 ✓', 'success');
-    } catch (e) {
-      toast('辨識失敗: ' + e.message, 'error');
-      console.error(e);
-      // 失敗也顯示表單讓使用者手動填
+      toast('✨ 辨識完成，請檢查後儲存', 'success');
+      vibrate(40);
+      $('detectArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      $('recognizeLoading').style.display = 'none';
       $('detectArea').style.display = 'block';
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
+      toast('辨識失敗，請手動填寫: ' + err.message, 'error');
+      console.error(err);
     }
   });
+
+  window.cancelPreview = () => {
+    if (!confirm('放棄這張照片？')) return;
+    $('previewPanel').style.display = 'none';
+    $('photoInput').value = '';
+    state.currentFile = null;
+  };
 
   function fillDetectFields(p) {
     const set = (id, val) => {
@@ -241,50 +306,46 @@
   }
 
   async function showMatchSuggestions(p) {
-    const matchArea = $('matchArea');
-    matchArea.innerHTML = '';
-    if (!p) return;
-
+    const area = $('matchArea');
+    area.innerHTML = '';
     let candidates = [];
-    // 優先財產編號精準比對
     if (p.property_number) {
       try {
-        const byPn = await window.SMES_DB.searchInventory(p.property_number);
-        candidates = byPn.slice(0, 3);
+        const rs = await window.SMES_DB.searchInventory(p.property_number);
+        candidates = rs.slice(0, 3);
       } catch (e) {}
     }
-    // 退而求其次用型號
     if (candidates.length === 0 && p.model) {
       try {
-        const byModel = await window.SMES_DB.searchInventory(p.model);
-        candidates = byModel.slice(0, 3);
+        const rs = await window.SMES_DB.searchInventory(p.model);
+        candidates = rs.slice(0, 3);
       } catch (e) {}
     }
 
     if (candidates.length === 0) {
-      matchArea.innerHTML = `<div class="match-result none">
-        🔍 財產表中找不到對應項目 — 可能是新購或尚未匯入 Excel
+      area.innerHTML = `<div class="match-banner none">
+        🔍 <span class="count">找不到對應的既有財產 — 可能是新購或尚未匯入</span>
       </div>`;
       return;
     }
 
-    matchArea.innerHTML = `<div class="match-result good">
-      🎯 找到 ${candidates.length} 筆可能對應的財產紀錄，點擊選取：
+    area.innerHTML = `<div class="match-banner good">
+      🎯 <span class="count">${candidates.length} 筆可能對應，點選要比對的</span>
     </div>` + candidates.map(c => `
       <div class="match-suggest" data-id="${c.id}">
-        <div class="title">${c.property_number || '(無編號)'} · ${c.item_name || ''}</div>
-        <div class="desc">${c.brand || ''} ${c.model || ''} ${c.acquired_year ? '· 取得 '+c.acquired_year : ''} ${c.location_text ? '· '+c.location_text : ''}</div>
+        <div class="check">✓</div>
+        <div class="info">
+          <div class="title">${c.property_number || '(無編號)'} · ${c.model || c.item_name || ''}</div>
+          <div class="desc">${c.brand || ''} ${c.acquired_year ? '· 取得 '+c.acquired_year+'年' : ''} ${c.location_text ? '· '+c.location_text : ''}</div>
+        </div>
       </div>
     `).join('');
 
-    matchArea.querySelectorAll('.match-suggest').forEach(el => {
+    area.querySelectorAll('.match-suggest').forEach(el => {
       el.addEventListener('click', () => {
-        matchArea.querySelectorAll('.match-suggest').forEach(x => x.style.background = '');
-        el.style.background = 'var(--primary-light)';
-        el.dataset.selected = '1';
-        matchArea.querySelectorAll('.match-suggest').forEach(x => {
-          if (x !== el) x.dataset.selected = '0';
-        });
+        area.querySelectorAll('.match-suggest').forEach(x => x.classList.remove('selected'));
+        el.classList.add('selected');
+        vibrate(15);
       });
     });
   }
@@ -294,29 +355,26 @@
     if (!state.currentFile || !state.currentRoom) return;
 
     const btn = $('btnSave');
-    const origHtml = btn.innerHTML;
+    const orig = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<span class="loading"></span> 儲存中…';
+    btn.innerHTML = '<span class="loading-inline"></span> 上傳中…';
 
     try {
       const room = state.currentRoom;
       const getVal = id => $(id).querySelector('input,select,textarea').value.trim() || null;
 
-      // 1. 上傳照片
       const ts = new Date();
       const ymd = ts.toISOString().slice(0,10);
       const fileName = `${ymd}/${room.code}_${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`;
       const photoUrl = await window.SMES_DB.uploadPhoto(state.currentFile, fileName);
 
-      // 2. 選到的比對
-      const selected = document.querySelector('#matchArea .match-suggest[data-selected="1"]');
-      const matched_inventory_id = selected ? parseInt(selected.dataset.id) : null;
+      const selected = document.querySelector('#matchArea .match-suggest.selected');
+      const matched_id = selected ? parseInt(selected.dataset.id) : null;
 
-      // 3. 插入紀錄
       const rocYearStr = getVal('f_roc_year');
       const rocYear = rocYearStr ? parseInt(rocYearStr) : null;
 
-      const record = {
+      await window.SMES_DB.insertPhoto({
         classroom_code: room.code,
         photo_path: fileName,
         photo_url: photoUrl,
@@ -328,49 +386,59 @@
         detected_serial: getVal('f_serial_number'),
         gemini_raw: state.lastDetection ? state.lastDetection.parsed : null,
         confidence: state.lastDetection?.parsed?.confidence || null,
-        matched_inventory_id,
-        match_method: matched_inventory_id ? 'manual' : null,
+        matched_inventory_id: matched_id,
+        match_method: matched_id ? 'manual' : null,
         notes: getVal('f_notes'),
         device_label: getDeviceLabel()
-      };
+      });
 
-      await window.SMES_DB.insertPhoto(record);
+      toast('✅ 已儲存，可繼續拍下一張', 'success');
+      vibrate([30, 50, 30]);
 
-      toast('儲存成功！', 'success');
-
-      // 清空準備下一張
       state.currentFile = null;
       state.lastDetection = null;
-      $('previewArea').classList.remove('active');
+      $('previewPanel').style.display = 'none';
       $('photoInput').value = '';
-
       await loadRoomRecords();
     } catch (e) {
       toast('儲存失敗: ' + e.message, 'error');
       console.error(e);
+      vibrate([100, 50, 100]);
     } finally {
       btn.disabled = false;
-      btn.innerHTML = origHtml;
+      btn.innerHTML = orig;
     }
   });
 
-  // ============ API Key 儲存 ============
-  window.saveApiKey = function() {
+  // ============ API Key fallback ============
+  window.saveApiKey = () => {
     const k = $('apiKeyInput').value.trim();
-    if (!k) { toast('請輸入 API Key', 'error'); return; }
+    if (!k) { toast('請輸入 Key', 'error'); return; }
     window.SMES_GEMINI.setKey(k);
     $('apiKeyModal').classList.remove('show');
-    toast('API Key 已儲存', 'success');
-    $('btnRecognize').click();
+    toast('已儲存，請再試', 'success');
   };
 
-  // ============ 搜尋/類別篩選 ============
+  // ============ 搜尋與篩選 ============
   $('roomSearch').addEventListener('input', renderRoomGrid);
-  $('catFilter').addEventListener('change', renderRoomGrid);
+
+  // Swipe down to close sheet（簡單偵測）
+  let sheetTouch = null;
+  $('roomSheet').addEventListener('touchstart', e => {
+    if (e.target.closest('.sheet-header') || e.target.closest('.sheet-handle')) {
+      sheetTouch = { y: e.touches[0].clientY };
+    }
+  });
+  $('roomSheet').addEventListener('touchmove', e => {
+    if (!sheetTouch) return;
+    const dy = e.touches[0].clientY - sheetTouch.y;
+    if (dy > 80) { closeRoomSheet(); sheetTouch = null; }
+  });
+  $('roomSheet').addEventListener('touchend', () => { sheetTouch = null; });
 
   // ============ 啟動 ============
   loadRooms().catch(e => {
-    toast('載入教室資料失敗: ' + e.message, 'error');
+    toast('載入教室失敗: ' + e.message, 'error');
     console.error(e);
   });
 })();

@@ -1,0 +1,20 @@
+{
+  "name": "石門國小 電腦財產盤點",
+  "short_name": "石門盤點",
+  "description": "入班拍照 AI 辨識電腦主機財產的行動工具",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f2f2f7",
+  "theme_color": "#0a84ff",
+  "lang": "zh-Hant",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

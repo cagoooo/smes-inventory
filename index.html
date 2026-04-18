@@ -2,84 +2,79 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="石門盤點">
-<meta name="theme-color" content="#0b63c5">
-<title>石門國小 · 電腦財產盤點</title>
+<meta name="theme-color" content="#0a84ff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>石門盤點</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
 <div class="topbar">
   <span class="logo">🏫</span>
-  <div class="title">石門國小 電腦財產盤點
-    <div class="subtitle">入班拍照 → AI 辨識 → 自動比對</div>
+  <div class="title">石門國小 盤點
+    <div class="subtitle">拍照 → AI 辨識 → 自動比對</div>
   </div>
-  <button class="nav-btn" onclick="location.href='manage.html'">📊 管理</button>
+  <button class="nav-btn" onclick="location.href='manage.html'">📊</button>
 </div>
 
 <main>
 
-  <!-- 教室選擇區 -->
-  <div class="card" id="roomSelectCard">
-    <h2>📍 選擇教室</h2>
-    <div class="floor-tabs" id="floorTabs"></div>
-    <div class="room-filter">
-      <input id="roomSearch" type="text" placeholder="搜尋教室 (代碼 / 名稱)" />
-      <select id="catFilter">
-        <option value="">所有類別</option>
-        <option value="class">班級教室</option>
-        <option value="subject">專科教室</option>
-        <option value="admin">行政辦公室</option>
-        <option value="care">課照班</option>
-        <option value="kindergarten">幼兒園</option>
-        <option value="other">其他</option>
-      </select>
+  <!-- 尚未選教室時的歡迎狀態 -->
+  <div id="welcomeState">
+    <div class="card" style="padding:20px;text-align:center;">
+      <div style="font-size:42px;margin-bottom:8px;">📍</div>
+      <h2 style="margin:0;">請先選擇教室</h2>
+      <p style="color:var(--text-soft);font-size:14px;margin:6px 0 16px;line-height:1.5;">
+        選好後每張拍的照片都會自動歸檔到該教室，下次打開會自動記住。
+      </p>
+      <button class="btn btn-primary btn-block" onclick="openRoomSheet()">
+        🏫 選擇教室
+      </button>
     </div>
-    <div class="room-grid" id="roomGrid"></div>
+
+    <div class="section-label">最近使用</div>
+    <div class="recent-chips" id="recentChips"></div>
   </div>
 
-  <!-- 目前教室面板 -->
+  <!-- 已選教室 -->
   <div id="currentRoomPanel" style="display:none;">
 
-    <div class="current-room-bar">
-      <div style="flex:1;min-width:0;">
-        <div class="label">📍 目前教室</div>
-        <div class="val" id="curRoomName">-</div>
-        <div class="meta">
-          <span id="curRoomCode"></span>
-          <span id="curRoomStats"></span>
-        </div>
+    <!-- Hero 教室卡 -->
+    <div class="hero-room">
+      <button class="change-btn" onclick="openRoomSheet()">↻ 換</button>
+      <div class="label">📍 目前教室</div>
+      <div class="name" id="curRoomName">-</div>
+      <div class="meta">
+        <span class="pill" id="pillCode">-</span>
+        <span class="pill" id="pillFloor">-</span>
+        <span class="pill" id="pillInv">📦 -</span>
+        <span class="pill" id="pillPhoto">📷 -</span>
       </div>
-      <button class="btn btn-ghost" onclick="changeRoom()" style="padding:8px 12px;font-size:13px;">更換</button>
-    </div>
-
-    <!-- 大大的拍照按鈕 -->
-    <div class="capture-box">
-      <label class="capture-btn" for="photoInput">
-        <span class="icon">📷</span>
-        <span>拍攝電腦主機 / 財產標籤</span>
-        <span class="sub">點此開啟相機即時拍照</span>
-        <input id="photoInput" type="file" accept="image/*" capture="environment">
-      </label>
     </div>
 
     <!-- 預覽與辨識 -->
-    <div class="card preview-area" id="previewArea">
-      <h2>📸 照片預覽</h2>
-      <img id="previewImg" class="preview-img" alt="預覽">
-      <div class="preview-actions">
-        <button class="btn btn-primary" id="btnRecognize"><span class="icon">🤖</span> AI 辨識</button>
-        <button class="btn btn-ghost" id="btnRetake">重拍</button>
+    <div class="preview-panel" id="previewPanel" style="display:none;">
+      <div class="preview-img-wrap">
+        <img id="previewImg" alt="預覽">
+        <button class="preview-overlay-btn" onclick="cancelPreview()" title="取消">✕</button>
+        <div class="loading-overlay" id="recognizeLoading" style="display:none;">
+          <div class="loading-lg"></div>
+          <div class="msg">AI 辨識中…<br>照片正在傳到雲端</div>
+        </div>
       </div>
 
       <div id="detectArea" style="display:none;">
-        <h3>辨識結果（綠色欄位由 AI 自動填入，可手動修正）</h3>
-        <div class="detect-fields">
+        <div class="form-grid">
           <div class="field" id="f_photo_type">
-            <label>照片類型</label>
+            <label>類型</label>
             <select>
               <option value="主機">電腦主機</option>
               <option value="筆電">筆電</option>
@@ -92,67 +87,97 @@
           </div>
           <div class="field" id="f_brand">
             <label>廠牌</label>
-            <input type="text" placeholder="ASUS / HP / Acer...">
+            <input type="text" placeholder="ASUS/HP...">
           </div>
           <div class="field full" id="f_model">
             <label>型號</label>
-            <input type="text" placeholder="型號 (例：ExpertCenter D500SC)">
+            <input type="text" placeholder="如 ExpertCenter D500SC">
           </div>
           <div class="field" id="f_property_number">
             <label>財產編號</label>
-            <input type="text" placeholder="例：3020112-0001">
+            <input type="text" placeholder="000xxx" inputmode="numeric">
           </div>
           <div class="field" id="f_roc_year">
-            <label>取得年份 (民國)</label>
-            <input type="number" min="80" max="120" placeholder="114">
+            <label>民國年</label>
+            <input type="number" min="80" max="125" placeholder="114" inputmode="numeric">
           </div>
           <div class="field full" id="f_serial_number">
-            <label>序號 S/N</label>
+            <label>序號 S/N（選填）</label>
             <input type="text" placeholder="選填">
           </div>
           <div class="field full" id="f_notes">
             <label>備註</label>
-            <textarea placeholder="特殊狀況、規格..."></textarea>
+            <textarea rows="2" placeholder="特殊狀況..."></textarea>
           </div>
+
+          <div class="full" id="matchArea"></div>
         </div>
 
-        <div id="matchArea"></div>
-
-        <button class="btn btn-success btn-block" id="btnSave" style="margin-top:14px;">
-          ✅ 儲存此筆紀錄
-        </button>
+        <div class="btn-save-panel">
+          <button class="btn btn-success btn-block" id="btnSave">
+            ✅ 儲存這筆紀錄
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- 本教室歷史紀錄 -->
-    <div class="card">
-      <h2>📋 本教室已登錄 <span id="roomRecordCount" style="color:var(--text-soft);font-size:13px;font-weight:400;"></span></h2>
-      <div class="record-list" id="roomRecords">
-        <div class="empty">尚無紀錄</div>
+    <!-- 本教室歷史 -->
+    <div class="section-label">本教室紀錄 <span id="roomRecordCount"></span></div>
+    <div class="record-list" id="roomRecords">
+      <div class="empty">
+        <div class="icon">📷</div>
+        尚無紀錄
       </div>
     </div>
 
-  </div><!-- /currentRoomPanel -->
+  </div>
 
 </main>
+
+<!-- 底部固定拍照按鈕 -->
+<div class="bottom-cta" id="bottomCta" style="display:none;">
+  <label class="btn-capture" for="photoInput">
+    <span class="icon">📷</span>
+    <span>拍攝 / 選擇照片</span>
+    <input id="photoInput" type="file" accept="image/*" capture="environment">
+  </label>
+</div>
+
+<!-- Bottom Sheet：教室選擇 -->
+<div class="sheet-backdrop" id="sheetBackdrop" onclick="closeRoomSheet()"></div>
+<div class="sheet" id="roomSheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <h3>選擇教室</h3>
+    <button class="sheet-close" onclick="closeRoomSheet()">✕</button>
+  </div>
+  <div class="sheet-body">
+    <div class="sheet-sticky">
+      <div class="floor-segments" id="floorTabs"></div>
+      <div class="search-wrap">
+        <input id="roomSearch" type="text" placeholder="搜尋 C102 / 六年1班 / 教務處..." autocomplete="off">
+      </div>
+      <div class="cat-chips" id="catChips"></div>
+    </div>
+    <div class="room-grid" id="roomGrid"></div>
+  </div>
+</div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<!-- Gemini Key 設定 Modal -->
+<!-- API Key fallback modal (通常不會出現) -->
 <div class="modal-backdrop" id="apiKeyModal">
   <div class="modal">
-    <h3>🔑 設定 Gemini API Key</h3>
-    <p style="font-size:13px;color:var(--text-soft);margin-top:0;">
-      請先至 <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> 申請免費 API Key，貼上後存在本裝置，不會上傳到任何伺服器。
-    </p>
-    <div class="field">
+    <h3>🔑 需要 Gemini API Key</h3>
+    <p>代理伺服器暫時無法使用，請貼上你的個人 Gemini API Key（只存在本機）。</p>
+    <div class="field" style="margin-top:10px;">
       <label>API Key</label>
       <input type="password" id="apiKeyInput" placeholder="AIzaSy...">
     </div>
     <div class="actions">
       <button class="btn btn-ghost" onclick="document.getElementById('apiKeyModal').classList.remove('show')">取消</button>
-      <button class="btn btn-primary" onclick="saveApiKey()">儲存</button>
+      <button class="btn btn-primary" onclick="saveApiKey()">儲存並重試</button>
     </div>
   </div>
 </div>
