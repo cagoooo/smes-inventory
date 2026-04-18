@@ -11,7 +11,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>石門盤點 · 管理後台</title>
-<link rel="stylesheet" href="css/style.css?v=7.2.4">
+<link rel="stylesheet" href="css/style.css?v=7.2.5">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -75,7 +75,7 @@
   <div class="tab-content" id="tab-dashboard">
 
     <!-- 月報表 PDF 按鈕 -->
-    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
+    <div class="dashboard-action-bar">
       <button class="btn btn-primary" onclick="generateMonthlyPDF()" id="btnMonthlyReport">
         📄 產生本月月報表 PDF
       </button>
@@ -181,8 +181,8 @@
         <p style="font-size:12px;color:var(--text-soft);margin:0 0 12px;line-height:1.5;">
           從系統資料庫產出 Veyon 可直接使用的 JSON 設定檔。汰換/搬家後在這裡重新匯出，覆蓋到 Veyon 即可，不用手動編輯。
         </p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <select id="veyonScope" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);min-width:160px;">
+        <div class="toolbar-row">
+          <select id="veyonScope" class="toolbar-select" style="min-width:160px;">
             <option value="all">全部設備 (150 台)</option>
             <option value="seg:10.44 (電腦教室)">僅 10.44 電腦教室</option>
             <option value="seg:10.36 (教學行政)">僅 10.36 教學行政</option>
@@ -202,17 +202,17 @@
         <div id="veyonDiffResult" style="margin-top:12px;"></div>
       </div>
 
-      <div class="kpi-grid" id="networkKPI" style="grid-template-columns:repeat(3,1fr);margin-top:14px;"></div>
+      <div class="kpi-grid network-kpi-3" id="networkKPI" style="margin-top:14px;"></div>
 
-      <div style="display:flex;gap:6px;margin:14px 0 10px;flex-wrap:wrap;">
-        <input id="netSearch" type="text" placeholder="搜尋名稱 / IP / MAC / 廠商" style="flex:1;min-width:180px;padding:10px;border-radius:10px;border:1.5px solid var(--border);">
-        <select id="netSegment" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+      <div class="toolbar-row" style="margin:14px 0 10px;">
+        <input id="netSearch" type="text" class="toolbar-input toolbar-grow" placeholder="搜尋名稱 / IP / MAC / 廠商">
+        <select id="netSegment" class="toolbar-select">
           <option value="">所有網段</option>
           <option value="10.44 (電腦教室)">10.44 電腦教室</option>
           <option value="10.36 (教學行政)">10.36 教學行政</option>
           <option value="10.66 (無線/移動)">10.66 無線/移動</option>
         </select>
-        <select id="netRole" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+        <select id="netRole" class="toolbar-select">
           <option value="">所有角色</option>
           <option value="computer_lab_student">電腦教室學生機</option>
           <option value="computer_lab_teacher">電腦教室教師機</option>
@@ -246,21 +246,21 @@
         </select>
       </div>
 
-      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-        <input id="qrFilter" type="text" placeholder="搜尋欲列印的財產（編號/型號）" style="flex:1;min-width:200px;padding:10px;border-radius:10px;border:1.5px solid var(--border);">
-        <select id="qrRoomFilter" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+      <div class="toolbar-row" style="margin-bottom:12px;">
+        <input id="qrFilter" type="text" class="toolbar-input toolbar-grow" placeholder="搜尋欲列印的財產（編號/型號）">
+        <select id="qrRoomFilter" class="toolbar-select">
           <option value="">所有教室</option>
         </select>
-        <select id="qrYearFilter" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);">
+        <select id="qrYearFilter" class="toolbar-select">
           <option value="">所有年份</option>
         </select>
         <button class="btn btn-ghost" onclick="qrSelectAll()">全選可見</button>
         <button class="btn btn-ghost" onclick="qrUnselectAll()">清除</button>
       </div>
 
-      <div style="padding:12px;background:var(--primary-light);border-radius:10px;margin-bottom:12px;">
-        📊 <b>已選 <span id="qrSelectedCount">0</span> 張</b> / 可見 <span id="qrVisibleCount">0</span> 張
-        <button class="btn btn-success" style="float:right;" onclick="generateQRPDF()" id="qrGenBtn">
+      <div class="qr-status-bar">
+        <div class="qr-status-text">📊 <b>已選 <span id="qrSelectedCount">0</span> 張</b> / 可見 <span id="qrVisibleCount">0</span> 張</div>
+        <button class="btn btn-success qr-gen-btn" onclick="generateQRPDF()" id="qrGenBtn">
           🖨 產生 PDF 開始列印
         </button>
       </div>
@@ -274,11 +274,11 @@
     <div class="search-wrap" style="margin-bottom:8px;">
       <input id="photoSearch" type="text" placeholder="搜尋教室 / 型號 / 財產編號">
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:10px;">
-      <select id="photoRoomFilter" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);font-size:14px;">
+    <div class="toolbar-row" style="margin-bottom:10px;">
+      <select id="photoRoomFilter" class="toolbar-select toolbar-grow">
         <option value="">所有教室</option>
       </select>
-      <button class="btn btn-ghost-accent" onclick="exportPhotosExcel()" style="padding:10px 14px;">⬇️ 匯出</button>
+      <button class="btn btn-ghost-accent" onclick="exportPhotosExcel()">⬇️ 匯出</button>
     </div>
     <div id="photoList"></div>
   </div>
@@ -293,11 +293,11 @@
     <div class="search-wrap" style="margin-bottom:8px;">
       <input id="invSearch" type="text" placeholder="搜尋編號 / 品名 / 型號">
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:10px;">
-      <select id="invRoomFilter" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);font-size:14px;">
+    <div class="toolbar-row" style="margin-bottom:10px;">
+      <select id="invRoomFilter" class="toolbar-select toolbar-grow">
         <option value="">所有教室</option>
       </select>
-      <select id="invYearFilter" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);font-size:14px;">
+      <select id="invYearFilter" class="toolbar-select">
         <option value="">所有年份</option>
       </select>
     </div>
@@ -350,23 +350,23 @@
 </div><!-- /appShell -->
 
 <script src="config.js"></script>
-<script src="js/auth.js?v=7.2.4"></script>
-<script src="js/supabase-client.js?v=7.2.4"></script>
-<script src="js/floorplan.js?v=7.2.4"></script>
-<script src="js/dashboard.js?v=7.2.4"></script>
-<script src="js/qr-labels.js?v=7.2.4"></script>
-<script src="js/monthly-report.js?v=7.2.4"></script>
-<script src="js/veyon-export.js?v=7.2.4"></script>
-<script src="js/network-tools.js?v=7.2.4"></script>
-<script src="js/error-monitor.js?v=7.2.4"></script>
-<script src="js/version-check.js?v=7.2.4"></script>
+<script src="js/auth.js?v=7.2.5"></script>
+<script src="js/supabase-client.js?v=7.2.5"></script>
+<script src="js/floorplan.js?v=7.2.5"></script>
+<script src="js/dashboard.js?v=7.2.5"></script>
+<script src="js/qr-labels.js?v=7.2.5"></script>
+<script src="js/monthly-report.js?v=7.2.5"></script>
+<script src="js/veyon-export.js?v=7.2.5"></script>
+<script src="js/network-tools.js?v=7.2.5"></script>
+<script src="js/error-monitor.js?v=7.2.5"></script>
+<script src="js/version-check.js?v=7.2.5"></script>
 <script>
   SMES_AUTH.initClient();
   SMES_AUTH.initSession();
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/manage.js?v=7.2.4';
+      s.src = 'js/manage.js?v=7.2.5';
       document.body.appendChild(s);
     }
   });

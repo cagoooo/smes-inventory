@@ -169,10 +169,11 @@
     const renderBlock = (block) => {
       const isVertical = block.vertical;
       const gridClass = isVertical ? 'fp-block-v' : 'fp-block-h';
+      const wrapClass = isVertical ? '' : 'fp-block-has-h';
       const cells = block.rows.map(row =>
         row.map(cell => renderRoom(cell)).join('')
       ).join('');
-      return `<div class="fp-block">
+      return `<div class="fp-block ${wrapClass}">
         <div class="fp-block-label">${block.label}</div>
         <div class="${gridClass}" style="--cols:${Math.max(...block.rows.map(r => r.reduce((s,c) => s + (c.span||1), 0)))};">
           ${cells}

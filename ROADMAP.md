@@ -1,7 +1,7 @@
 # 📍 石門盤點系統 · 產品 Roadmap
 
 > 最後更新：2026-04-18
-> 目前版本：**v7.2.4 — QR 標籤 PDF 中文亂碼修復（Canvas 渲染）**
+> 目前版本：**v7.2.5 — 平面圖手機捲動 + 管理後台全分頁手機 RWD**
 > 部署網址：https://cagoooo.github.io/smes-inventory/
 > **登入系統已完成實測，任何非 `@mail2.smes.tyc.edu.tw` 帳號會被自動登出**
 
@@ -22,11 +22,40 @@
 | v7.2.2 | 04-18 | 修復 QR PDF 產生失敗 (qrious) + PWA 版本查詢字串 | 0.5h |
 | v7.2.3 | 04-18 | MAC 廠商 OUI 辨識 + IP 衝突偵測 + 篩選結果 Excel 匯出 + pwa-cache-bust skill | 1h |
 | v7.2.4 | 04-18 | QR 標籤 PDF 改用 Canvas 渲染（修復中文亂碼 + 跑板 + 自動換行截斷） | 0.5h |
-| **現況** | | **30 小時內打造完整學校資訊管理系統** | **~30h** |
+| v7.2.5 | 04-18 | 平面圖北側走廊手機橫向捲動 + 管理後台全分頁深度 RWD 優化 | 1h |
+| **現況** | | **31 小時內打造完整學校資訊管理系統** | **~31h** |
 
 ---
 
 ## 📊 進度表（已完成）
+
+### 📱 v7.2.5 — 手機端全面 RWD 優化 (2026-04-18)
+
+> 問題：
+> 1. iPhone 開平面圖，三樓/二樓/一樓北側走廊（8-11 間教室一排）**跑出畫面**
+> 2. 管理後台 7 個分頁幾乎沒為手機端做過 RWD，篩選列全擠在一起
+
+- ✅ **平面圖水平走廊橫向捲動**
+  - `.fp-block-h` 加 `overflow-x: auto` + `-webkit-overflow-scrolling: touch`
+  - 右緣漸層提示還有內容（`::after` with gradient）
+  - `scroll-snap-type: x proximity` 捲動時自動對齊教室格
+  - 教室名稱超長自動 ellipsis 2 行截斷
+- ✅ **管理後台 `.toolbar-row` 通用工具列**
+  - 桌面水平排列 → 手機自動堆疊、每個元件撐滿全寬
+  - `.toolbar-input` / `.toolbar-select` 統一樣式（符合 iOS Human Interface）
+  - 套用位置：Veyon 匯出、網路篩選、QR 篩選、照片篩選、財產篩選
+- ✅ **手機專屬 RWD 深度優化（≤ 640px）**
+  - Tab bar 壓縮（7 個分頁保持可捲動，字體 12.5px）
+  - Stat grid 強制 2 欄，val 字體從 26px → 22px
+  - KPI grid 字體縮小、padding 緊湊
+  - 網路 3 欄 KPI（10.44 / 10.36 / 10.66）強制 3 欄但內文縮小不擠
+  - Data table 字體 13 → 12px、padding 10 → 8px
+  - MAC 欄位 monospace 更小字體避免換行
+  - QR list 強制 1 欄、狀態列按鈕全寬
+  - Budget 試算 slider label 縮小
+  - 匯入欄位對應 fieldMap 1→2 欄，超小機變 1 欄
+- ✅ **iPhone SE 專屬（≤ 360px）**
+  - 進一步縮小數字、tab 按鈕、fieldMap 單欄
 
 ### 🏷️ v7.2.4 — QR 標籤 PDF 修復 (2026-04-18)
 

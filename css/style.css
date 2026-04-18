@@ -393,11 +393,40 @@ main { padding: 12px 16px; max-width: 820px; margin: 0 auto; }
   letter-spacing: 0.05em; margin-bottom: 6px;
 }
 
-/* 水平走廊（所有 room 一排，可多 span） */
+/* 水平走廊（所有 room 一排，可多 span）
+   手機螢幕不夠寬時允許橫向捲動，避免擠壓跑版 */
 .fp-block-h {
   display: grid;
   grid-template-columns: repeat(var(--cols, 10), minmax(56px, 1fr));
   gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  scroll-snap-type: x proximity;
+  /* 讓 grid 在 flex 父層不被壓縮 */
+  min-width: 0;
+}
+.fp-block-h::-webkit-scrollbar { display: none; }
+.fp-block-h > .fp-cell { scroll-snap-align: start; }
+/* 水平走廊的父層：右緣加漸層提示「還有內容」 */
+.fp-block.fp-block-has-h {
+  position: relative;
+  overflow: hidden;
+}
+.fp-block.fp-block-has-h::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 18px;
+  background: linear-gradient(to right, transparent, var(--card) 90%);
+  pointer-events: none;
+  border-radius: 0 10px 10px 0;
+}
+@media (min-width: 900px) {
+  /* 桌面螢幕夠寬就不需要漸層提示 */
+  .fp-block.fp-block-has-h::after { display: none; }
 }
 
 /* 垂直翼樓 */
@@ -426,6 +455,13 @@ main { padding: 12px 16px; max-width: 820px; margin: 0 auto; }
 .fp-name {
   font-size: 11px; font-weight: 600;
   line-height: 1.15; margin-top: 1px;
+  /* 避免超長教室名稱撐破格子 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
 }
 .fp-pct {
   font-size: 9px; margin-top: 2px;
@@ -1350,6 +1386,202 @@ main { padding: 12px 16px; max-width: 820px; margin: 0 auto; }
 @media (min-width: 640px) {
   .budget-num { font-size: 28px; }
   .budget-num.budget-total { font-size: 36px; }
+}
+
+/* =========== 管理後台 - 通用工具列 (toolbar-row) =========== */
+/* 搭配 manage.html 的 .toolbar-row / .toolbar-input / .toolbar-select 使用
+   桌面水平排列、手機自動換行且每個元件撐滿全寬 */
+.toolbar-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.toolbar-input,
+.toolbar-select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  min-height: var(--tap);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.toolbar-input:focus,
+.toolbar-select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.toolbar-select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'><path fill='%238e8e93' d='M0 0l5 6 5-6z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px;
+  padding-right: 30px;
+}
+.toolbar-grow { flex: 1; min-width: 180px; }
+
+/* =========== QR 狀態列（已選 / 按鈕）=========== */
+.qr-status-bar {
+  padding: 12px 14px;
+  background: var(--primary-light);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.qr-status-text { flex: 1; min-width: 160px; font-size: 13px; }
+.qr-gen-btn { white-space: nowrap; }
+
+/* =========== Dashboard 動作列 =========== */
+.dashboard-action-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+/* ==================================================
+   📱 手機端（≤ 640px）— 管理後台 RWD 深度優化
+   ================================================== */
+@media (max-width: 640px) {
+
+  /* --- 頁面間距 --- */
+  main { padding: 10px 12px; }
+
+  /* --- 統計卡 (stat-grid) --- */
+  .stat-grid { gap: 8px; grid-template-columns: repeat(2, 1fr); }
+  .stat-card { padding: 10px 12px; border-left-width: 3px; }
+  .stat-card .val { font-size: 22px; }
+  .stat-card .label { font-size: 10px; }
+
+  /* --- Tab bar --- */
+  .tab-bar { padding: 3px; gap: 1px; margin-bottom: 10px; }
+  .tab-bar button {
+    min-width: 56px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+    flex: 0 0 auto;  /* 手機保持原寬度可捲動，不強制等分 */
+  }
+
+  /* --- KPI 卡 --- */
+  .kpi-grid { gap: 8px; }
+  .kpi-card { padding: 10px 12px; border-top-width: 3px; }
+  .kpi-card .val { font-size: 24px; }
+  .kpi-card .label { font-size: 10px; }
+  .kpi-card .sub { font-size: 10px; }
+
+  /* 網路分頁的 3 欄 KPI — 手機強制 3 欄但內容縮小 */
+  .network-kpi-3 { grid-template-columns: repeat(3, 1fr) !important; gap: 6px; }
+  .network-kpi-3 .kpi-card { padding: 8px 6px; }
+  .network-kpi-3 .kpi-card .val { font-size: 18px; }
+  .network-kpi-3 .kpi-card .label { font-size: 9.5px; line-height: 1.2; letter-spacing: 0; }
+  .network-kpi-3 .kpi-card .sub { font-size: 9.5px; }
+
+  /* --- 工具列 (toolbar-row) 手機堆疊 --- */
+  .toolbar-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .toolbar-input,
+  .toolbar-select,
+  .toolbar-row .btn {
+    width: 100%;
+    min-width: 0;
+  }
+  .toolbar-grow { min-width: 0; }
+
+  /* --- Veyon 匯出框 --- */
+  .veyon-export-box { padding: 12px; }
+  .veyon-export-box h3 { font-size: 14px; }
+
+  /* --- Dashboard 動作列 --- */
+  .dashboard-action-bar { justify-content: stretch; }
+  .dashboard-action-bar .btn { flex: 1; }
+
+  /* --- 列表卡片 --- */
+  .card { padding: 12px; }
+  .card h2 { font-size: 15px; }
+  .list-item { padding: 10px; margin-bottom: 6px; }
+  .list-item .row { gap: 8px; }
+  .list-item img { width: 44px; height: 44px; }
+  .list-item .title { font-size: 13.5px; line-height: 1.25; }
+  .list-item .sub { font-size: 11.5px; line-height: 1.35; }
+
+  /* 拍照紀錄圖片稍大 */
+  #photoList .list-item img { width: 52px; height: 52px; }
+
+  /* --- 圖表卡 --- */
+  .chart-card { padding: 12px; border-radius: 12px; }
+  .chart-card h3 { font-size: 14px; margin-bottom: 8px; }
+  .chart-wrap { height: 220px; }
+
+  /* --- 資料表 (data-table) 手機字體縮小 + 邊距緊湊 --- */
+  .table-wrap { border-radius: 10px; }
+  .data-table { font-size: 12px; }
+  .data-table th, .data-table td { padding: 8px 6px; }
+  .data-table th { font-size: 10px; }
+  .data-table.sortable th.sortable-th { padding-right: 22px; }
+  .sort-arrow { right: 6px; font-size: 9px; }
+  /* MAC 欄位使用更小字體避免斷行 */
+  .data-table td[style*="monospace"] {
+    font-size: 10.5px !important;
+    letter-spacing: -0.01em;
+  }
+
+  /* --- Vendor tag 手機小一點 --- */
+  .vendor-tag { font-size: 10px; padding: 1px 6px; }
+
+  /* --- QR list 手機 1 欄 --- */
+  .qr-list { grid-template-columns: 1fr; gap: 4px; }
+  .qr-item { padding: 8px 10px; }
+  .qr-item .qr-pn { font-size: 13px; }
+
+  /* --- QR 狀態列 手機堆疊 --- */
+  .qr-status-bar { padding: 10px 12px; }
+  .qr-gen-btn { width: 100%; }
+
+  /* --- 預算試算 手機緊湊 --- */
+  .budget-calc { gap: 12px; }
+  .slider-row { gap: 4px; }
+  .slider-label { font-size: 13px; }
+  .slider-label b { font-size: 16px; }
+  .budget-big { padding: 14px; gap: 10px; }
+
+  /* --- Diff / Conflict banner 手機 --- */
+  .conflict-banner { padding: 10px 12px; font-size: 12px; }
+  .conflict-banner b { font-size: 13px; }
+  .conflict-banner .conflict-row { font-size: 11.5px; padding: 4px 0; }
+
+  /* --- 匯入分頁 field-map 自動換行 --- */
+  #fieldMap { grid-template-columns: 1fr 1fr !important; gap: 6px !important; }
+  #fieldMap .field label { font-size: 10px; }
+
+  /* --- topbar 字體縮小 --- */
+  .topbar { padding: calc(var(--safe-top) + 8px) 12px 8px; gap: 6px; }
+  .topbar .title { font-size: 15px; }
+  .topbar .subtitle { font-size: 10px; }
+  .nav-btn { padding: 0 10px; min-height: 32px; font-size: 12px; }
+}
+
+/* ==================================================
+   📱 極小手機（iPhone SE 等，≤ 360px）
+   ================================================== */
+@media (max-width: 360px) {
+  main { padding: 8px 10px; }
+  .stat-card .val { font-size: 20px; }
+  .kpi-card .val { font-size: 22px; }
+  .tab-bar button { padding: 7px 8px; font-size: 11.5px; min-width: 50px; }
+  .network-kpi-3 .kpi-card .val { font-size: 16px; }
+  .network-kpi-3 .kpi-card .label { font-size: 9px; }
+  #fieldMap { grid-template-columns: 1fr !important; }
 }
 
 /* ================================================================
