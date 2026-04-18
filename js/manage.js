@@ -518,6 +518,41 @@
 
   // ============ 網路設備 Tab ============
   let netDevices = null;
+  const netSort = { key: 'host_address', dir: 'asc' };  // 預設按 IP 升冪
+
+  // IP 轉成可比較的數值（e.g. 10.36.182.102 → 10036182102）
+  function ipToNum(ip) {
+    if (!ip) return 0;
+    const parts = String(ip).split('.').map(n => parseInt(n) || 0);
+    return parts[0] * 1e9 + parts[1] * 1e6 + parts[2] * 1e3 + parts[3];
+  }
+
+  function sortDevices(list, key, dir) {
+    const mult = dir === 'desc' ? -1 : 1;
+    const sorted = [...list].sort((a, b) => {
+      let av = a[key], bv = b[key];
+      if (key === 'host_address') return (ipToNum(av) - ipToNum(bv)) * mult;
+      // MAC 字串去掉分隔符號比較
+      if (key === 'mac_address') {
+        av = (av || '').replace(/[-:]/g, '').toLowerCase();
+        bv = (bv || '').replace(/[-:]/g, '').toLowerCase();
+      }
+      av = (av || '').toString();
+      bv = (bv || '').toString();
+      return av.localeCompare(bv, 'zh-Hant', { numeric: true }) * mult;
+    });
+    return sorted;
+  }
+
+  window.sortNet = (key) => {
+    if (netSort.key === key) {
+      netSort.dir = netSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      netSort.key = key;
+      netSort.dir = 'asc';
+    }
+    applyNetworkFilter();
+  };
 
   async function loadNetwork() {
     if (netDevices) return netDevices;
@@ -588,10 +623,27 @@
       return;
     }
 
+    // 排序
+    list = sortDevices(list, netSort.key, netSort.dir);
+
+    const cols = [
+      { key: 'name', label: '名稱' },
+      { key: 'host_address', label: 'IP 位址' },
+      { key: 'mac_address', label: 'MAC 位址' },
+      { key: 'network_segment', label: '網段' },
+      { key: 'device_role', label: '角色' },
+      { key: 'classroom_code', label: '教室' }
+    ];
+
+    const arrow = k => {
+      if (netSort.key !== k) return '<span class="sort-arrow">↕</span>';
+      return netSort.dir === 'asc' ? '<span class="sort-arrow active">▲</span>' : '<span class="sort-arrow active">▼</span>';
+    };
+
     $('netList').innerHTML = `<div class="table-wrap">
-      <table class="data-table">
+      <table class="data-table sortable">
         <thead><tr>
-          <th>名稱</th><th>IP 位址</th><th>MAC 位址</th><th>網段</th><th>角色</th><th>教室</th>
+          ${cols.map(c => `<th class="sortable-th" onclick="sortNet('${c.key}')">${c.label}${arrow(c.key)}</th>`).join('')}
         </tr></thead>
         <tbody>
           ${list.slice(0, 500).map(d => `
