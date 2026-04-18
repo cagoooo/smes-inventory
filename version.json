@@ -1,5 +1,5 @@
 {
-  "version": "v7.2.3",
-  "build": "2026-04-18e",
-  "notes": "MAC 廠商自動辨識 (OUI) + IP 衝突偵測 + 篩選結果 Excel 匯出"
+  "version": "v7.2.4",
+  "build": "2026-04-18f",
+  "notes": "QR 標籤 PDF 改用 Canvas 渲染，解決中文亂碼與跑板問題"
 }
