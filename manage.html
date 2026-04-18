@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a84ff">
@@ -174,7 +175,34 @@
         來自 Veyon 的 150 台設備固定 IP / MAC 對應表。<b>10.44 網段</b>為電腦教室學生機，<b>10.36 網段</b>為教師/行政機，<b>10.66 網段</b>為無線移動設備。
       </p>
 
-      <div class="kpi-grid" id="networkKPI" style="grid-template-columns:repeat(3,1fr);"></div>
+      <!-- Veyon 匯出 / 差異比對 -->
+      <div class="veyon-export-box">
+        <h3 style="margin:0 0 8px;font-size:14px;">📤 Veyon 設定檔匯出 & 差異比對</h3>
+        <p style="font-size:12px;color:var(--text-soft);margin:0 0 12px;line-height:1.5;">
+          從系統資料庫產出 Veyon 可直接使用的 JSON 設定檔。汰換/搬家後在這裡重新匯出，覆蓋到 Veyon 即可，不用手動編輯。
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <select id="veyonScope" style="padding:10px;border-radius:10px;border:1.5px solid var(--border);min-width:160px;">
+            <option value="all">全部設備 (150 台)</option>
+            <option value="seg:10.44 (電腦教室)">僅 10.44 電腦教室</option>
+            <option value="seg:10.36 (教學行政)">僅 10.36 教學行政</option>
+            <option value="seg:10.66 (無線/移動)">僅 10.66 無線/移動</option>
+            <option value="grp:109-SMES">僅 電腦二 (109-SMES)</option>
+            <option value="grp:113-SMES">僅 電腦一 (113-SMES)</option>
+            <option value="grp:全校班級電腦">僅 全校班級電腦</option>
+            <option value="grp:@行政">僅 @行政</option>
+            <option value="grp:移動觸屏">僅 移動觸屏</option>
+          </select>
+          <button class="btn btn-primary" onclick="doVeyonExport()">📥 產出 veyon.json</button>
+          <label class="btn btn-ghost" style="cursor:pointer;">
+            🔍 比對舊檔 (上傳舊 veyon.json)
+            <input type="file" id="veyonDiffInput" accept=".json" style="display:none;" onchange="doVeyonDiff(this)">
+          </label>
+        </div>
+        <div id="veyonDiffResult" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="kpi-grid" id="networkKPI" style="grid-template-columns:repeat(3,1fr);margin-top:14px;"></div>
 
       <div style="display:flex;gap:6px;margin:14px 0 10px;flex-wrap:wrap;">
         <input id="netSearch" type="text" placeholder="搜尋名稱 / IP / MAC" style="flex:1;min-width:180px;padding:10px;border-radius:10px;border:1.5px solid var(--border);">
@@ -326,6 +354,7 @@
 <script src="js/dashboard.js"></script>
 <script src="js/qr-labels.js"></script>
 <script src="js/monthly-report.js"></script>
+<script src="js/veyon-export.js"></script>
 <script src="js/error-monitor.js"></script>
 <script src="js/version-check.js"></script>
 <script>

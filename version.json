@@ -1,5 +1,5 @@
 {
-  "version": "v7.2",
-  "build": "2026-04-18",
-  "notes": "Veyon 網路整合 (150 台) + 月報表 PDF 一鍵產生"
+  "version": "v7.2.1",
+  "build": "2026-04-18b",
+  "notes": "修正 Auth 無限 reload bug + Veyon JSON 匯出雛形"
 }

@@ -620,6 +620,94 @@
     b.addEventListener('click', () => renderNetwork());
   });
 
+  // ============ Veyon 匯出 ============
+  window.doVeyonExport = async () => {
+    const list = await loadNetwork();
+    const scope = $('veyonScope').value;
+
+    let filtered = list;
+    let scopeName = 'all';
+    let scopeValue = null;
+
+    if (scope.startsWith('seg:')) {
+      scopeValue = scope.slice(4);
+      filtered = window.SMES_VEYON.filterDevices(list, { segment: scopeValue });
+      scopeName = 'segment';
+    } else if (scope.startsWith('grp:')) {
+      scopeValue = scope.slice(4);
+      filtered = window.SMES_VEYON.filterDevices(list, { group: scopeValue });
+      scopeName = 'group';
+    }
+
+    if (filtered.length === 0) {
+      toast('沒有符合條件的設備', 'error');
+      return;
+    }
+
+    const json = window.SMES_VEYON.build(filtered);
+    const ts = new Date().toISOString().slice(0, 10);
+    const fname = scopeValue ? `veyon_${scopeValue.replace(/[^\w]/g, '_')}_${ts}.json` : `veyon_all_${ts}.json`;
+    window.SMES_VEYON.download(json, fname);
+
+    // 紀錄到 Supabase
+    await window.SMES_VEYON.logExport(scopeName, scopeValue, filtered, null);
+
+    toast(`✅ 已匯出 ${filtered.length} 台設備到 ${fname}`, 'success');
+  };
+
+  window.doVeyonDiff = (fileInput) => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const oldJson = JSON.parse(e.target.result);
+        const list = await loadNetwork();
+        const result = window.SMES_VEYON.diff(oldJson, list);
+        renderDiffResult(result);
+      } catch (err) {
+        toast('讀取舊 JSON 失敗: ' + err.message, 'error');
+      }
+      fileInput.value = '';
+    };
+    reader.readAsText(file);
+  };
+
+  function renderDiffResult(r) {
+    const el = $('veyonDiffResult');
+    el.innerHTML = `
+      <div class="diff-summary">
+        <b>📊 比對結果</b>：舊檔 ${r.oldCount} 台 → 新檔 ${r.newCount} 台
+        <span style="color:var(--success);">+ 新增 ${r.added.length}</span>
+        <span style="color:var(--danger);">− 移除 ${r.removed.length}</span>
+        <span style="color:var(--accent);">⚡ 變更 ${r.changed.length}</span>
+      </div>
+      ${r.added.length ? `
+        <details open><summary class="diff-summary-head added">➕ 新增 ${r.added.length} 台（Veyon 中沒有但系統有）</summary>
+          <div class="diff-list">
+            ${r.added.map(a => `<div class="diff-row added"><b>${a.new.name}</b> · ${a.new.host_address || '-'} · ${a.new.mac_address || ''} · ${a.new.group_name}</div>`).join('')}
+          </div>
+        </details>` : ''}
+      ${r.removed.length ? `
+        <details open><summary class="diff-summary-head removed">➖ 移除 ${r.removed.length} 台（Veyon 中有但系統沒有，可能已汰換）</summary>
+          <div class="diff-list">
+            ${r.removed.map(a => `<div class="diff-row removed"><b>${a.old.name}</b> · ${a.old.host || '-'} · ${a.old.mac || ''}</div>`).join('')}
+          </div>
+        </details>` : ''}
+      ${r.changed.length ? `
+        <details open><summary class="diff-summary-head changed">⚡ 變更 ${r.changed.length} 台（IP/MAC/群組被修改）</summary>
+          <div class="diff-list">
+            ${r.changed.map(c => `<div class="diff-row changed">
+              <b>${c.name}</b> (${c.host})
+              <ul>${c.diffs.map(d => `<li>${d.field}：<span style="color:var(--danger);">${d.old || '(空)'}</span> → <span style="color:var(--success);">${d.new || '(空)'}</span></li>`).join('')}</ul>
+            </div>`).join('')}
+          </div>
+        </details>` : ''}
+      ${r.added.length === 0 && r.removed.length === 0 && r.changed.length === 0 ?
+        '<div style="padding:14px;background:var(--success-soft);color:var(--success);border-radius:8px;">✅ 資料完全一致！Veyon 設定與系統資料庫無差異。</div>' : ''}
+    `;
+  }
+
   // ============ 月報表 PDF ============
   window.generateMonthlyPDF = async () => {
     const btn = $('btnMonthlyReport');

@@ -44,7 +44,7 @@
     onReadyCallbacks.forEach(cb => { try { cb(currentUser); } catch (e) {} });
     onReadyCallbacks = [];
 
-    // 監聽 Auth 狀態變更
+    // 監聽 Auth 狀態變更（不再自動 reload — onReady 已處理首次載入流程）
     sb.auth.onAuthStateChange(async (event, session) => {
       const newUser = session?.user || null;
       if (newUser && !newUser.email?.endsWith('@' + ALLOWED_DOMAIN)) {
@@ -54,10 +54,6 @@
       }
       currentUser = newUser;
       updateAuthUI();
-      if (event === 'SIGNED_IN') {
-        // 重新整理頁面以載入資料
-        setTimeout(() => location.reload(), 400);
-      }
     });
   }
 
