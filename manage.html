@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>石門國小 · 財產盤點管理</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="logo">📊</span>
+  <div class="title">盤點管理後台
+    <div class="subtitle">統計 / 匯入 / 交叉比對</div>
+  </div>
+  <button class="nav-btn" onclick="location.href='index.html'">📷 回拍照</button>
+</div>
+
+<main>
+
+  <!-- 總覽統計 -->
+  <div class="card">
+    <h2>📈 總覽</h2>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="label">教室總數</div><div class="val" id="statRooms">-</div></div>
+      <div class="stat-card accent"><div class="label">財產項目 (Excel)</div><div class="val" id="statInv">-</div></div>
+      <div class="stat-card success"><div class="label">拍照紀錄</div><div class="val" id="statPhotos">-</div></div>
+      <div class="stat-card danger"><div class="label">已比對紀錄</div><div class="val" id="statMatched">-</div></div>
+    </div>
+  </div>
+
+  <!-- 分頁切換 -->
+  <div class="card" style="padding:0;">
+    <div style="display:flex;border-bottom:1px solid var(--border);overflow-x:auto;">
+      <button class="tab-btn active" data-tab="photos" style="flex:1;min-width:100px;padding:14px;background:none;border:none;font-size:14px;font-weight:600;border-bottom:3px solid var(--primary);color:var(--primary-dark);cursor:pointer;">📷 拍照紀錄</button>
+      <button class="tab-btn" data-tab="rooms" style="flex:1;min-width:100px;padding:14px;background:none;border:none;font-size:14px;font-weight:600;border-bottom:3px solid transparent;color:var(--text-soft);cursor:pointer;">🏫 教室盤點狀態</button>
+      <button class="tab-btn" data-tab="inv" style="flex:1;min-width:100px;padding:14px;background:none;border:none;font-size:14px;font-weight:600;border-bottom:3px solid transparent;color:var(--text-soft);cursor:pointer;">📦 財產資料</button>
+      <button class="tab-btn" data-tab="import" style="flex:1;min-width:100px;padding:14px;background:none;border:none;font-size:14px;font-weight:600;border-bottom:3px solid transparent;color:var(--text-soft);cursor:pointer;">📥 匯入 Excel</button>
+    </div>
+
+    <!-- Tab: 拍照紀錄 -->
+    <div class="tab-content" id="tab-photos" style="padding:16px;">
+      <div class="room-filter">
+        <input id="photoSearch" type="text" placeholder="搜尋教室/型號/編號">
+        <select id="photoRoomFilter"><option value="">所有教室</option></select>
+        <button class="btn btn-ghost" onclick="exportPhotosExcel()">⬇️ 匯出 Excel</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="photoTable">
+          <thead><tr>
+            <th>照片</th><th>教室</th><th>類型</th><th>廠牌/型號</th><th>財產編號</th><th>取得</th><th>比對</th><th>時間</th><th></th>
+          </tr></thead>
+          <tbody><tr><td colspan="9" class="empty">載入中…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab: 教室盤點狀態 -->
+    <div class="tab-content" id="tab-rooms" style="padding:16px;display:none;">
+      <div class="table-wrap">
+        <table class="data-table" id="roomsTable">
+          <thead><tr>
+            <th>樓層</th><th>教室代碼</th><th>教室名稱</th><th>類別</th><th>已拍照</th><th>財產數</th><th>最舊年份</th><th>操作</th>
+          </tr></thead>
+          <tbody><tr><td colspan="8" class="empty">載入中…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab: 財產資料 -->
+    <div class="tab-content" id="tab-inv" style="padding:16px;display:none;">
+      <div class="room-filter">
+        <input id="invSearch" type="text" placeholder="搜尋 編號/品名/型號">
+        <select id="invRoomFilter"><option value="">所有教室</option></select>
+        <select id="invYearFilter"><option value="">所有年份</option></select>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="invTable">
+          <thead><tr>
+            <th>財產編號</th><th>品名</th><th>廠牌/型號</th><th>取得年</th><th>位置</th><th>狀態</th><th>已拍照</th>
+          </tr></thead>
+          <tbody><tr><td colspan="7" class="empty">尚未匯入，請到「匯入 Excel」上傳</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab: 匯入 Excel -->
+    <div class="tab-content" id="tab-import" style="padding:16px;display:none;">
+      <h3 style="margin-top:0;">📥 從 Excel 匯入財產清冊</h3>
+      <p style="font-size:13px;color:var(--text-soft);">
+        上傳學校目前的財產統計表 Excel 檔。系統會：
+        <br>1. 解析每一列
+        <br>2. 自動嘗試對應欄位（財產編號、品名、型號、年份、位置…）
+        <br>3. 讓您在匯入前預覽與微調欄位對應
+        <br>4. 確認後匯入 Supabase，原始資料保留在 raw_data 欄位
+      </p>
+
+      <label class="btn btn-primary btn-block" style="margin-top:10px;cursor:pointer;" for="excelFile">
+        📂 選擇 Excel 檔 (.xlsx / .xls / .csv)
+      </label>
+      <input id="excelFile" type="file" accept=".xlsx,.xls,.csv" style="display:none;">
+
+      <div id="excelPreview" style="display:none;margin-top:16px;">
+        <h3>✅ 欄位對應（請檢查綠色對應是否正確）</h3>
+        <div id="sheetPicker" style="margin-bottom:10px;"></div>
+        <div id="fieldMap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px;"></div>
+        <h3>📋 資料預覽 (前 10 筆)</h3>
+        <div class="table-wrap">
+          <table class="data-table" id="previewTable"></table>
+        </div>
+        <p id="previewStats" style="font-size:13px;color:var(--text-soft);"></p>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn btn-success" onclick="confirmImport()">✅ 確認匯入</button>
+          <button class="btn btn-danger" onclick="clearAndImport()">🗑 清空既有資料再匯入</button>
+          <button class="btn btn-ghost" onclick="cancelImport()">取消</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/manage.js"></script>
+</body>
+</html>

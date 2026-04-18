@@ -1,0 +1,8 @@
+scripts/all_chunks.txt
+scripts/chunk_*_wrapped.txt
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.local

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="石門盤點">
+<meta name="theme-color" content="#0b63c5">
+<title>石門國小 · 電腦財產盤點</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <span class="logo">🏫</span>
+  <div class="title">石門國小 電腦財產盤點
+    <div class="subtitle">入班拍照 → AI 辨識 → 自動比對</div>
+  </div>
+  <button class="nav-btn" onclick="location.href='manage.html'">📊 管理</button>
+</div>
+
+<main>
+
+  <!-- 教室選擇區 -->
+  <div class="card" id="roomSelectCard">
+    <h2>📍 選擇教室</h2>
+    <div class="floor-tabs" id="floorTabs"></div>
+    <div class="room-filter">
+      <input id="roomSearch" type="text" placeholder="搜尋教室 (代碼 / 名稱)" />
+      <select id="catFilter">
+        <option value="">所有類別</option>
+        <option value="class">班級教室</option>
+        <option value="subject">專科教室</option>
+        <option value="admin">行政辦公室</option>
+        <option value="care">課照班</option>
+        <option value="kindergarten">幼兒園</option>
+        <option value="other">其他</option>
+      </select>
+    </div>
+    <div class="room-grid" id="roomGrid"></div>
+  </div>
+
+  <!-- 目前教室面板 -->
+  <div id="currentRoomPanel" style="display:none;">
+
+    <div class="current-room-bar">
+      <div style="flex:1;min-width:0;">
+        <div class="label">📍 目前教室</div>
+        <div class="val" id="curRoomName">-</div>
+        <div class="meta">
+          <span id="curRoomCode"></span>
+          <span id="curRoomStats"></span>
+        </div>
+      </div>
+      <button class="btn btn-ghost" onclick="changeRoom()" style="padding:8px 12px;font-size:13px;">更換</button>
+    </div>
+
+    <!-- 大大的拍照按鈕 -->
+    <div class="capture-box">
+      <label class="capture-btn" for="photoInput">
+        <span class="icon">📷</span>
+        <span>拍攝電腦主機 / 財產標籤</span>
+        <span class="sub">點此開啟相機即時拍照</span>
+        <input id="photoInput" type="file" accept="image/*" capture="environment">
+      </label>
+    </div>
+
+    <!-- 預覽與辨識 -->
+    <div class="card preview-area" id="previewArea">
+      <h2>📸 照片預覽</h2>
+      <img id="previewImg" class="preview-img" alt="預覽">
+      <div class="preview-actions">
+        <button class="btn btn-primary" id="btnRecognize"><span class="icon">🤖</span> AI 辨識</button>
+        <button class="btn btn-ghost" id="btnRetake">重拍</button>
+      </div>
+
+      <div id="detectArea" style="display:none;">
+        <h3>辨識結果（綠色欄位由 AI 自動填入，可手動修正）</h3>
+        <div class="detect-fields">
+          <div class="field" id="f_photo_type">
+            <label>照片類型</label>
+            <select>
+              <option value="主機">電腦主機</option>
+              <option value="筆電">筆電</option>
+              <option value="螢幕">螢幕</option>
+              <option value="財產標籤">財產標籤</option>
+              <option value="印表機">印表機</option>
+              <option value="網通設備">網通設備</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+          <div class="field" id="f_brand">
+            <label>廠牌</label>
+            <input type="text" placeholder="ASUS / HP / Acer...">
+          </div>
+          <div class="field full" id="f_model">
+            <label>型號</label>
+            <input type="text" placeholder="型號 (例：ExpertCenter D500SC)">
+          </div>
+          <div class="field" id="f_property_number">
+            <label>財產編號</label>
+            <input type="text" placeholder="例：3020112-0001">
+          </div>
+          <div class="field" id="f_roc_year">
+            <label>取得年份 (民國)</label>
+            <input type="number" min="80" max="120" placeholder="114">
+          </div>
+          <div class="field full" id="f_serial_number">
+            <label>序號 S/N</label>
+            <input type="text" placeholder="選填">
+          </div>
+          <div class="field full" id="f_notes">
+            <label>備註</label>
+            <textarea placeholder="特殊狀況、規格..."></textarea>
+          </div>
+        </div>
+
+        <div id="matchArea"></div>
+
+        <button class="btn btn-success btn-block" id="btnSave" style="margin-top:14px;">
+          ✅ 儲存此筆紀錄
+        </button>
+      </div>
+    </div>
+
+    <!-- 本教室歷史紀錄 -->
+    <div class="card">
+      <h2>📋 本教室已登錄 <span id="roomRecordCount" style="color:var(--text-soft);font-size:13px;font-weight:400;"></span></h2>
+      <div class="record-list" id="roomRecords">
+        <div class="empty">尚無紀錄</div>
+      </div>
+    </div>
+
+  </div><!-- /currentRoomPanel -->
+
+</main>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Gemini Key 設定 Modal -->
+<div class="modal-backdrop" id="apiKeyModal">
+  <div class="modal">
+    <h3>🔑 設定 Gemini API Key</h3>
+    <p style="font-size:13px;color:var(--text-soft);margin-top:0;">
+      請先至 <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> 申請免費 API Key，貼上後存在本裝置，不會上傳到任何伺服器。
+    </p>
+    <div class="field">
+      <label>API Key</label>
+      <input type="password" id="apiKeyInput" placeholder="AIzaSy...">
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('apiKeyModal').classList.remove('show')">取消</button>
+      <button class="btn btn-primary" onclick="saveApiKey()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/gemini.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
