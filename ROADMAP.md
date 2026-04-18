@@ -1,7 +1,7 @@
 # 📍 石門盤點系統 · 產品 Roadmap
 
 > 最後更新：2026-04-18
-> 目前版本：**v7.2.1 — Veyon JSON 反向產出 + 差異比對工具**
+> 目前版本：**v7.2.3 — MAC 廠商 OUI 辨識 + IP 衝突偵測 + Excel 匯出**
 > 部署網址：https://cagoooo.github.io/smes-inventory/
 > **登入系統已完成實測，任何非 `@mail2.smes.tyc.edu.tw` 帳號會被自動登出**
 
@@ -19,11 +19,34 @@
 | v7.1 | 04-18 | Rate Limit + QR 批次 + 壽命預測 + 錯誤監控 + 自動備份 + IP 欄位 | 3h |
 | v7.2 | 04-18 | Veyon 網路整合 (150 台 IP/MAC) + 月報表 PDF 一鍵產生 | 2h |
 | v7.2.1 | 04-18 | 修復 Auth 無限 reload bug + Veyon JSON 匯出 + 差異比對工具 | 1h |
-| **現況** | | **28 小時內打造完整學校資訊管理系統** | **~28h** |
+| v7.2.2 | 04-18 | 修復 QR PDF 產生失敗 (qrious) + PWA 版本查詢字串 | 0.5h |
+| v7.2.3 | 04-18 | MAC 廠商 OUI 辨識 + IP 衝突偵測 + 篩選結果 Excel 匯出 + pwa-cache-bust skill | 1h |
+| **現況** | | **29.5 小時內打造完整學校資訊管理系統** | **~29.5h** |
 
 ---
 
 ## 📊 進度表（已完成）
+
+### 🌐 v7.2.3 — 網路管理工具強化 (2026-04-18)
+
+> 目標：讓網管廠商可以直接把系統匯出的 Excel 拿來施工，不用再比對 Veyon + 電腦清單兩張表。
+
+- ✅ **MAC 廠商自動辨識（OUI 查詢）**
+  - 內建常見 OUI 表：Lenovo / ASUSTek / Apple / Acer / Intel / Realtek / AzureWave / HP / TP-Link / Cisco…
+  - MAC 前 3 組（前 6 碼）即時查對應廠商
+  - 網路列表新增「廠商」欄位（pill 標籤樣式）
+  - 可依廠商排序 / 搜尋
+- ✅ **IP 衝突偵測**
+  - 同一 IP 被多台設備使用時自動列為衝突
+  - 頂部紅色警示 banner 顯示所有衝突 IP（點擊捲動到該設備）
+  - 衝突列表背景標紅 + IP 欄位加 ⚠ badge
+- ✅ **篩選結果 Excel 匯出**
+  - 「📊 匯出 Excel」按鈕，匯出目前網段/群組/角色/搜尋篩選後的結果
+  - 欄位：名稱、IP、MAC、廠商、網段、群組、角色、教室、備註、Veyon UID
+  - 若有 IP 衝突自動多加一頁「⚠️ IP 衝突」列表
+- ✅ **pwa-cache-bust skill**（`~/.claude/skills/pwa-cache-bust/SKILL.md`）
+  - 讓 Claude 下次遇到「改了 JS 但使用者看舊版」的問題時自動套用版本查詢字串修法
+  - 內建 10 項常見陷阱對照表（無限 reload、opaque response、iOS Safari 7 天清 SW…）
 
 ### ✅ v1.0 — 核心 MVP (2026-04-18)
 | 項目 | 狀態 |

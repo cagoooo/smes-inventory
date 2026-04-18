@@ -1,7 +1,7 @@
 // QR Code 批次生成 PDF — 一鍵印財產標籤
 // 用 QRious + jsPDF (CDN)
-// 版本 v7.2.2b — 若主控台看到這行代表載入的是新版
-console.log('[qr-labels] v7.2.2b loaded (QRious)');
+// 版本 v7.2.3 — 若主控台看到這行代表載入的是新版
+console.log('[qr-labels] v7.2.3 loaded (QRious)');
 (function() {
   const LABELS = {
     // 常見標籤紙配置 (mm)

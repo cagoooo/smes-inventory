@@ -1,5 +1,5 @@
 {
-  "version": "v7.2.2b",
-  "build": "2026-04-18d",
-  "notes": "所有 JS 加版本查詢字串，永久解決 SW 快取舊版問題"
+  "version": "v7.2.3",
+  "build": "2026-04-18e",
+  "notes": "MAC 廠商自動辨識 (OUI) + IP 衝突偵測 + 篩選結果 Excel 匯出"
 }

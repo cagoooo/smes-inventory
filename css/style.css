@@ -957,6 +957,67 @@ main { padding: 12px 16px; max-width: 820px; margin: 0 auto; }
   font-size: 11px;
 }
 
+/* =========== 網路工具：MAC 廠商、IP 衝突、Excel 匯出 =========== */
+.conflict-banner {
+  background: linear-gradient(135deg, var(--danger-soft), #ffeceb);
+  border: 1.5px solid var(--danger);
+  border-left: 4px solid var(--danger);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #8b2929;
+  box-shadow: 0 2px 8px rgba(255,59,48,0.12);
+}
+.conflict-banner b {
+  display: block;
+  font-size: 14px;
+  color: var(--danger);
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+.conflict-banner .conflict-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.conflict-banner .conflict-chip {
+  background: #fff;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.data-table tr.row-conflict,
+.data-table tr.conflict-row {
+  background: rgba(255,59,48,0.06);
+}
+.data-table tr.row-conflict:hover,
+.data-table tr.conflict-row:hover {
+  background: rgba(255,59,48,0.12);
+}
+.data-table tr.row-conflict td,
+.data-table tr.conflict-row td {
+  border-bottom-color: rgba(255,59,48,0.2);
+}
+
+.vendor-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
 /* =========== Veyon 匯出 & 差異比對 =========== */
 .veyon-export-box {
   background: linear-gradient(135deg, #e5f1ff, #f0f7ff);

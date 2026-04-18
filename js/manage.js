@@ -529,10 +529,12 @@
 
   function sortDevices(list, key, dir) {
     const mult = dir === 'desc' ? -1 : 1;
+    const vendor = d => (window.SMES_NETTOOLS?.vendorOf(d.mac_address) || '');
     const sorted = [...list].sort((a, b) => {
-      let av = a[key], bv = b[key];
+      let av, bv;
+      if (key === '_vendor') { av = vendor(a); bv = vendor(b); }
+      else { av = a[key]; bv = b[key]; }
       if (key === 'host_address') return (ipToNum(av) - ipToNum(bv)) * mult;
-      // MAC 字串去掉分隔符號比較
       if (key === 'mac_address') {
         av = (av || '').replace(/[-:]/g, '').toLowerCase();
         bv = (bv || '').replace(/[-:]/g, '').toLowerCase();
@@ -589,6 +591,29 @@
       <div class="kpi-card success"><div class="label">10.66 無線/移動</div><div class="val">${by66}</div><div class="sub">台</div></div>
     `;
 
+    // IP 衝突警示
+    if (window.SMES_NETTOOLS) {
+      const conflicts = window.SMES_NETTOOLS.findIPConflicts(list);
+      const count = Object.keys(conflicts).length;
+      const el = $('ipConflictWarning');
+      if (el) {
+        if (count > 0) {
+          el.style.display = 'block';
+          const rows = Object.entries(conflicts).map(([ip, devs]) =>
+            `<div class="conflict-row"><b>${ip}</b> 被 ${devs.length} 台佔用：${devs.map(d => d.name).join('、')}</div>`
+          ).join('');
+          el.innerHTML = `
+            <div class="conflict-banner">
+              <b>⚠️ 偵測到 ${count} 組 IP 衝突</b>
+              <div style="margin-top:6px;font-size:12px;">${rows}</div>
+            </div>
+          `;
+        } else {
+          el.style.display = 'none';
+        }
+      }
+    }
+
     applyNetworkFilter();
   }
 
@@ -601,12 +626,14 @@
     let list = netDevices;
     if (seg) list = list.filter(d => d.network_segment === seg);
     if (role) list = list.filter(d => d.device_role === role);
-    if (kw) list = list.filter(d =>
-      (d.name || '').toLowerCase().includes(kw) ||
-      (d.host_address || '').toLowerCase().includes(kw) ||
-      (d.mac_address || '').toLowerCase().includes(kw) ||
-      (d.classroom_code || '').toLowerCase().includes(kw)
-    );
+    if (kw) list = list.filter(d => {
+      const vendor = window.SMES_NETTOOLS?.vendorOf(d.mac_address) || '';
+      return (d.name || '').toLowerCase().includes(kw) ||
+        (d.host_address || '').toLowerCase().includes(kw) ||
+        (d.mac_address || '').toLowerCase().includes(kw) ||
+        (d.classroom_code || '').toLowerCase().includes(kw) ||
+        vendor.toLowerCase().includes(kw);
+    });
 
     const roleLabel = {
       computer_lab_student: '電腦教室學生',
@@ -630,6 +657,7 @@
       { key: 'name', label: '名稱' },
       { key: 'host_address', label: 'IP 位址' },
       { key: 'mac_address', label: 'MAC 位址' },
+      { key: '_vendor', label: '廠商' },
       { key: 'network_segment', label: '網段' },
       { key: 'device_role', label: '角色' },
       { key: 'classroom_code', label: '教室' }
@@ -640,22 +668,30 @@
       return netSort.dir === 'asc' ? '<span class="sort-arrow active">▲</span>' : '<span class="sort-arrow active">▼</span>';
     };
 
+    // 取出所有 IP 衝突（全局，不只篩選後）
+    const allList = netDevices;
+    const conflicts = window.SMES_NETTOOLS ? window.SMES_NETTOOLS.findIPConflicts(allList) : {};
+
     $('netList').innerHTML = `<div class="table-wrap">
       <table class="data-table sortable">
         <thead><tr>
           ${cols.map(c => `<th class="sortable-th" onclick="sortNet('${c.key}')">${c.label}${arrow(c.key)}</th>`).join('')}
         </tr></thead>
         <tbody>
-          ${list.slice(0, 500).map(d => `
-            <tr>
+          ${list.slice(0, 500).map(d => {
+            const vendor = window.SMES_NETTOOLS ? (window.SMES_NETTOOLS.vendorOf(d.mac_address) || '') : '';
+            const isConflict = d.host_address && conflicts[d.host_address];
+            return `
+            <tr class="${isConflict ? 'row-conflict' : ''}">
               <td><b>${d.name}</b></td>
-              <td style="font-family:monospace">${d.host_address || '-'}</td>
+              <td style="font-family:monospace">${d.host_address || '-'}${isConflict ? ' <span class="badge badge-old" title="IP 衝突">⚠</span>' : ''}</td>
               <td style="font-family:monospace;font-size:11px;">${d.mac_address || '-'}</td>
+              <td>${vendor ? `<span class="vendor-tag">${vendor}</span>` : '<span style="color:var(--text-muted);">-</span>'}</td>
               <td>${d.network_segment || '-'}</td>
               <td>${roleLabel[d.device_role] || d.device_role}</td>
               <td>${d.classroom_code || '-'}</td>
             </tr>
-          `).join('')}
+          `;}).join('')}
         </tbody>
       </table>
     </div>` + (list.length > 500 ? `<p style="text-align:center;color:var(--text-muted);">僅顯示前 500 筆 (共 ${list.length})</p>` : '');
@@ -671,6 +707,30 @@
   $('tabBar').querySelectorAll('button[data-tab="network"]').forEach(b => {
     b.addEventListener('click', () => renderNetwork());
   });
+
+  // Excel 匯出目前篩選結果
+  window.exportNetworkExcel = async () => {
+    const all = await loadNetwork();
+    const kw = ($('netSearch')?.value || '').trim().toLowerCase();
+    const seg = $('netSegment')?.value || '';
+    const role = $('netRole')?.value || '';
+
+    let list = all;
+    if (seg) list = list.filter(d => d.network_segment === seg);
+    if (role) list = list.filter(d => d.device_role === role);
+    if (kw) list = list.filter(d => {
+      const vendor = window.SMES_NETTOOLS?.vendorOf(d.mac_address) || '';
+      return (d.name || '').toLowerCase().includes(kw) ||
+        (d.host_address || '').toLowerCase().includes(kw) ||
+        (d.mac_address || '').toLowerCase().includes(kw) ||
+        (d.classroom_code || '').toLowerCase().includes(kw) ||
+        vendor.toLowerCase().includes(kw);
+    });
+
+    if (!list.length) { toast('無可匯出資料', 'error'); return; }
+    const fname = window.SMES_NETTOOLS.exportToExcel(list);
+    toast(`✅ 已匯出 ${list.length} 筆到 ${fname}`, 'success');
+  };
 
   // ============ Veyon 匯出 ============
   window.doVeyonExport = async () => {
