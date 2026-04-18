@@ -9,9 +9,8 @@
     Chart.defaults.font.size = 12;
     Chart.defaults.plugins.legend.labels.padding = 14;
     Chart.defaults.plugins.legend.labels.boxWidth = 12;
-    const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
-    Chart.defaults.color = isDark ? '#ebebf5' : '#3c3c43';
-    Chart.defaults.borderColor = isDark ? '#38383a' : '#e5e5ea';
+    Chart.defaults.color = '#3c3c43';
+    Chart.defaults.borderColor = '#e5e5ea';
   }
 
   // 色盤（iOS 風）

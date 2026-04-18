@@ -32,23 +32,9 @@
   --safe-bottom: env(safe-area-inset-bottom);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #000;
-    --bg-elevated: #1c1c1e;
-    --card: #1c1c1e;
-    --border: #38383a;
-    --sep: #38383a;
-    --text: #fff;
-    --text-2: #ebebf5;
-    --text-soft: #ebebf599;
-    --text-muted: #ebebf566;
-    --primary-light: #003166;
-    --accent-soft: #4d2f00;
-    --success-soft: #0d3b1a;
-    --danger-soft: #3d0f0c;
-  }
-}
+/* 強制固定亮色模式（不跟隨系統） */
+:root { color-scheme: light; }
+html, body { background: var(--bg); color: var(--text); }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; }
@@ -110,9 +96,6 @@ input, textarea, select { user-select: auto; -webkit-user-select: auto; }
   padding: 12px; background: var(--primary-light);
   color: var(--primary-dark); border-radius: 10px;
 }
-@media (prefers-color-scheme: dark) {
-  .google-signin-btn { background: #fff; color: #3c4043; }
-}
 
 /* =========== 使用者 Chip =========== */
 .user-chip {
@@ -148,9 +131,6 @@ input, textarea, select { user-select: auto; -webkit-user-select: auto; }
   padding: calc(var(--safe-top) + 10px) 16px 10px;
   display: flex; align-items: center; gap: 10px;
   min-height: var(--nav-h);
-}
-@media (prefers-color-scheme: dark) {
-  .topbar { background: rgba(28,28,30,0.85); }
 }
 .topbar .logo { font-size: 22px; line-height: 1; }
 .topbar .title { font-size: 17px; font-weight: 700; flex: 1; line-height: 1.2; letter-spacing: -0.01em; }
