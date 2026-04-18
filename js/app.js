@@ -25,6 +25,8 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => t.classList.remove('show'), 2800);
   }
+  // 把 toast 注入給 offline.js 共用
+  if (window.SMES_OFFLINE) window.SMES_OFFLINE.toast = toast;
   function getDeviceLabel() {
     let l = localStorage.getItem(STORAGE_DEVICE);
     if (!l) {
@@ -394,6 +396,9 @@
   const deskInput = $('photoInputDesktop');
   if (deskInput) deskInput.addEventListener('change', e => handlePhotoFile(e.target.files[0]));
 
+  // Live 相機呼叫 handlePhotoFile — 暴露給 window 供 camera.js / HTML onclick 使用
+  window.handlePhotoFile = handlePhotoFile;
+
   // ============ 桌機：拖放照片上傳 ============
   const dropZone = $('dropZone');
   if (dropZone) {
@@ -544,19 +549,17 @@
       const ts = new Date();
       const ymd = ts.toISOString().slice(0,10);
       const fileName = `${ymd}/${room.code}_${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`;
-      const photoUrl = await window.SMES_DB.uploadPhoto(state.currentFile, fileName);
 
       const selected = document.querySelector('#matchArea .match-suggest.selected');
       const matched_id = selected ? parseInt(selected.dataset.id) : null;
-
       const rocYearStr = getVal('f_roc_year');
       const rocYear = rocYearStr ? parseInt(rocYearStr) : null;
-
       const user = window.SMES_AUTH?.getUser?.();
-      await window.SMES_DB.insertPhoto({
+
+      const record = {
         classroom_code: room.code,
         photo_path: fileName,
-        photo_url: photoUrl,
+        photo_url: null,  // 會在上傳成功後填
         photo_type: getVal('f_photo_type'),
         detected_brand: getVal('f_brand'),
         detected_model: getVal('f_model'),
@@ -570,7 +573,29 @@
         notes: getVal('f_notes'),
         device_label: getDeviceLabel(),
         created_by: user?.id || null
-      });
+      };
+
+      // 離線時 → 進 IndexedDB 佇列
+      if (!navigator.onLine) {
+        await window.SMES_OFFLINE.enqueuePhoto({
+          file: state.currentFile,
+          classroom_code: room.code,
+          record
+        });
+        toast('📴 離線中，已存入佇列，回線後自動上傳', 'success');
+        vibrate([30, 50, 30]);
+        state.currentFile = null;
+        state.lastDetection = null;
+        $('previewPanel').style.display = 'none';
+        $('photoInput').value = '';
+        if ($('photoInputDesktop')) $('photoInputDesktop').value = '';
+        return;
+      }
+
+      // 線上：直接上傳
+      const photoUrl = await window.SMES_DB.uploadPhoto(state.currentFile, fileName);
+      record.photo_url = photoUrl;
+      await window.SMES_DB.insertPhoto(record);
 
       toast('✅ 已儲存，可繼續拍下一張', 'success');
       vibrate([30, 50, 30]);

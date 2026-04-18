@@ -53,6 +53,9 @@
   <div id="userChip" class="user-chip" style="display:none;"></div>
 </div>
 
+<!-- 離線狀態 Badge -->
+<div class="offline-badge" id="offlineBadge" style="display:none;"></div>
+
 <!-- 鍵盤快捷鍵說明 Modal -->
 <div class="modal-backdrop" id="shortcutsModal">
   <div class="modal">
@@ -164,6 +167,10 @@
         <span class="kbd">Space</span>
         <input id="photoInputDesktop" type="file" accept="image/*">
       </label>
+      <button class="btn-capture-inline" onclick="SMES_CAMERA.open(handlePhotoFile)" style="flex:0 1 auto;padding:20px 24px;background:linear-gradient(135deg,#af52de,#7c3aed);box-shadow:0 6px 20px rgba(175,82,222,0.3);">
+        <span class="icon">🎥</span>
+        <span>Live 相機</span>
+      </button>
       <div class="drop-zone" id="dropZone" data-tooltip="也可拖放照片到這裡">
         <span class="icon">📥</span>
         <span>拖曳照片到此區域</span>
@@ -247,8 +254,11 @@
 <!-- 底部固定拍照按鈕 -->
 <div class="bottom-cta" id="bottomCta" style="display:none;">
   <div style="display:flex;gap:8px;">
-    <button class="btn-capture-mini" onclick="openQRScanner()" data-tooltip="掃財產標籤上的 QR Code">
+    <button class="btn-capture-mini" onclick="openQRScanner()" data-tooltip="掃財產標籤 QR">
       📱<br><small>QR</small>
+    </button>
+    <button class="btn-capture-mini" onclick="SMES_CAMERA.open(handlePhotoFile)" data-tooltip="Live 相機 + 九宮格">
+      🎥<br><small>Live</small>
     </button>
     <label class="btn-capture" for="photoInput">
       <span class="icon">📷</span>
@@ -336,10 +346,22 @@
 <script src="config.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/supabase-client.js"></script>
+<script src="js/offline.js"></script>
+<script src="js/camera.js"></script>
 <script src="js/gemini.js"></script>
 <script src="js/floorplan.js"></script>
 <script>
-  // 先初始化登入，登入後才載 app.js
+  // 註冊 Service Worker（Cache-first + 背景同步）
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(e => console.warn('[SW] register fail', e));
+  }
+
+  // 確保相機 UI modal 就位
+  SMES_CAMERA.ensureUI();
+
+  // 初始化離線監聽
+  SMES_OFFLINE.init();
+
   SMES_AUTH.initClient();
   SMES_AUTH.initSession();
   SMES_AUTH.onReady(user => {

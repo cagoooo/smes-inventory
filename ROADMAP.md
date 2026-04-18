@@ -1,7 +1,7 @@
 # 📍 石門盤點系統 · 產品 Roadmap
 
 > 最後更新：2026-04-18
-> 目前版本：**v6.0 — 進階分析儀表板（Chart.js + 熱度圖 + 預算試算）**
+> 目前版本：**v7.0 — PWA 離線模式 + Live 相機 + iOS Safari 完整相容**
 > 部署網址：https://cagoooo.github.io/smes-inventory/
 > **登入系統已完成實測，任何非 `@mail2.smes.tyc.edu.tw` 帳號會被自動登出**
 
@@ -106,6 +106,40 @@
 | **快速重拍**（舊紀錄點「重拍」自動帶入原教室 + 原資料） | ★★★ | 易 | 1h |
 
 ---
+
+## ✅ v7.0 — 離線模式 + Live 相機（2026-04-18 完成）
+
+### 📴 離線模式 (PWA Service Worker)
+- ✅ `sw.js` — cache-first 靜態資源（HTML/CSS/JS/CDN），network-first Supabase API
+- ✅ IndexedDB 離線佇列（pending_photos store）
+  - 訊號不好時拍照自動存 IndexedDB
+  - 網路恢復 / 切回 App / Background Sync 自動重試上傳
+  - 失敗次數記錄 (attempts)，連續失敗會保留不丟
+- ✅ 離線狀態 Badge：頂部固定小膠囊顯示「📴 離線中」或「📤 N 筆待上傳」
+- ✅ PWA Badge API（iOS 16.4+ 主畫面 icon 上顯示待傳數字）
+- ✅ Cache-first 策略：第二次打開網站幾乎瞬開
+- ✅ 照片 Stale-while-revalidate：歷史紀錄照片永續快取
+
+### 📸 Live 相機增強
+- ✅ getUserMedia 全螢幕相機（不跳出 iOS 系統相機）
+- ✅ 九宮格對齊輔助線（可開關）
+- ✅ 中央取景框（200-340px 依螢幕大小）
+- ✅ 即時曝光偵測（600ms 頻率）：
+  - 過暗 (亮度 <60) 提示「光線偏暗，建議開燈」
+  - 過曝 (亮度 >210) 提示「過曝 · 遠離強光」
+  - 反光點 >5% 提示「偵測到反光 · 調整角度」
+  - 正常 ✓ 綠底顯示「光線合宜」
+- ✅ 拍照閃光效果 + 震動回饋
+- ✅ iOS 多層 getUserMedia fallback（ideal→exact→basic）
+- ✅ 相機開啟失敗具體錯誤提示（NotAllowedError/NotFoundError/NotReadableError）
+
+### 🍎 iOS Safari 相容性
+- ✅ Service Worker skipWaiting 確保更新立即生效
+- ✅ Background Sync 不支援時的 visibility+online 事件備援
+- ✅ `<video playsinline>` 屬性避免全螢幕自動接管
+- ✅ navigator.vibrate / setAppBadge 都 try/catch 保護
+- ✅ HTTPS 強制檢查（localhost 例外）
+- ✅ apple-touch-icon + apple-mobile-web-app-capable 加主畫面 OK
 
 ## ✅ v6.0 — 進階分析與視覺化（2026-04-18 完成）
 
