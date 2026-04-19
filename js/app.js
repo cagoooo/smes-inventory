@@ -592,17 +592,31 @@
       return;
     }
 
-    area.innerHTML = `<div class="match-banner good">
-      🎯 <span class="count">${candidates.length} 筆可能對應，點選要比對的</span>
-    </div>` + candidates.map(c => `
-      <div class="match-suggest" data-id="${c.id}">
+    // 判斷候選是否在其他教室（搬家情境）
+    const transferred = candidates.filter(c =>
+      c.classroom_code && c.classroom_code !== state.currentRoom.code
+    );
+    const bannerText = transferred.length > 0
+      ? `🚛 找到 ${candidates.length} 筆對應，其中 <b>${transferred.length} 筆在其他教室</b>（可能是閒置機轉移來的）`
+      : `🎯 ${candidates.length} 筆可能對應，點選要比對的`;
+
+    area.innerHTML = `<div class="match-banner ${transferred.length > 0 ? 'transfer' : 'good'}">
+      <span class="count">${bannerText}</span>
+    </div>` + candidates.map(c => {
+      const isTransfer = c.classroom_code && c.classroom_code !== state.currentRoom.code;
+      const roomInfo = state.rooms?.find?.(r => r.code === c.classroom_code);
+      const fromWhere = c.classroom_code
+        ? (roomInfo ? `${c.classroom_code} ${roomInfo.name}` : c.classroom_code)
+        : '(未設定教室)';
+      return `
+      <div class="match-suggest ${isTransfer ? 'is-transfer' : ''}" data-id="${c.id}">
         <div class="check">✓</div>
         <div class="info">
           <div class="title">${c.property_number || '(無編號)'} · ${c.model || c.item_name || ''}</div>
-          <div class="desc">${c.brand || ''} ${c.acquired_year ? '· 取得 '+c.acquired_year+'年' : ''} ${c.location_text ? '· '+c.location_text : ''}</div>
+          <div class="desc">${c.brand || ''} ${c.acquired_year ? '· 取得 '+c.acquired_year+'年' : ''} · <span class="from-room">${isTransfer ? '🚛 目前登記在 ' : '📍 '}${fromWhere}</span></div>
         </div>
-      </div>
-    `).join('') + `<div id="invDiffArea"></div>`;
+      </div>`;
+    }).join('') + `<div id="invDiffArea"></div>`;
 
     area.querySelectorAll('.match-suggest').forEach(el => {
       el.addEventListener('click', () => {
@@ -653,13 +667,19 @@
       }
     });
 
-    // 檢查教室是否變更
-    if (candidate.classroom_code !== state.currentRoom.code) {
+    // 檢查教室是否變更（搬家偵測）
+    const isTransfer = candidate.classroom_code && candidate.classroom_code !== state.currentRoom.code;
+    if (isTransfer || !candidate.classroom_code) {
+      const fromRoom = state.rooms?.find?.(r => r.code === candidate.classroom_code);
+      const oldDisplay = candidate.classroom_code
+        ? (fromRoom ? `${candidate.classroom_code} ${fromRoom.name}` : candidate.classroom_code)
+        : '(未設定教室)';
       changes.push({
         field: 'classroom_code',
-        label: '所在教室',
-        oldVal: candidate.classroom_code || '(未設定)',
-        newVal: state.currentRoom.code + ' ' + state.currentRoom.name
+        label: isTransfer ? '🚛 教室轉移' : '所在教室',
+        oldVal: oldDisplay,
+        newVal: state.currentRoom.code + ' ' + state.currentRoom.name,
+        transfer: isTransfer  // 標記這是搬家
       });
     }
 
@@ -672,17 +692,27 @@
       return;
     }
 
+    // 是否有搬家情境？給 panel 不同的視覺
+    const hasTransfer = changes.some(c => c.transfer);
+    const panelClass = hasTransfer ? 'inv-diff-panel is-transfer' : 'inv-diff-panel';
+    const title = hasTransfer
+      ? `🚛 偵測到設備搬家：共 ${changes.length} 個欄位要更新`
+      : `📝 發現 ${changes.length} 個欄位與清冊不同（可能主機已汰換/更換）`;
+
     diffEl.innerHTML = `
-      <div class="inv-diff-panel">
+      <div class="${panelClass}">
         <div class="inv-diff-head">
-          <div class="inv-diff-title">📝 發現 ${changes.length} 個欄位與清冊不同（可能主機已汰換/更換）</div>
+          <div class="inv-diff-title">${title}</div>
           <label class="inv-diff-all">
             <input type="checkbox" id="invDiffAll" checked> 全選
           </label>
         </div>
+        ${hasTransfer ? `<div class="inv-diff-transfer-banner">
+          這台設備原本登記在其他教室，勾選「教室轉移」後儲存，系統會把清冊上的教室改成 <b>${state.currentRoom.code} ${state.currentRoom.name}</b>。
+        </div>` : ''}
         <div class="inv-diff-list">
           ${changes.map(c => `
-            <label class="inv-diff-row">
+            <label class="inv-diff-row ${c.transfer ? 'is-transfer-row' : ''}">
               <input type="checkbox" class="inv-diff-check" data-field="${c.field}" data-new="${(c.newVal || '').replace(/"/g, '&quot;')}" checked>
               <div class="inv-diff-content">
                 <div class="inv-diff-label">${c.label}</div>
