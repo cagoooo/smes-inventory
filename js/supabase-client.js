@@ -94,6 +94,21 @@
     async clearInventory() {
       return rest('inventory_items?id=gte.0', { method: 'DELETE' });
     },
+    async updateInventoryItem(id, patch) {
+      return rest(`inventory_items?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(patch)
+      });
+    },
+    async insertInventoryItem(item) {
+      const rows = await rest('inventory_items', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(item)
+      });
+      return rows[0];
+    },
 
     // 照片紀錄
     async listPhotosByRoom(code, limit = 50) {

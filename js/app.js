@@ -373,10 +373,16 @@
       fillDetectFields(parsed);
       await showMatchSuggestions(parsed);
 
-      // QR 預填了 matched_inventory_id 的話直接選上該建議
+      // QR 預填了 matched_inventory_id 的話直接選上該建議並觸發 diff
       if (state.qrPrefill?.matched_inventory_id) {
-        const el = document.querySelector(`.match-suggest[data-id="${state.qrPrefill.matched_inventory_id}"]`);
-        if (el) el.classList.add('selected');
+        const mid = state.qrPrefill.matched_inventory_id;
+        const el = document.querySelector(`.match-suggest[data-id="${mid}"]`);
+        if (el) {
+          document.querySelectorAll('.match-suggest').forEach(x => x.classList.remove('selected'));
+          el.classList.add('selected');
+          const cand = lastCandidates.find(c => c.id === mid);
+          if (cand) renderInventoryDiff(cand);
+        }
       }
       state.qrPrefill = null;
       $('recognizeLoading').style.display = 'none';
@@ -551,6 +557,9 @@
     set('f_notes', p.notes);
   }
 
+  // 儲存候選清單（供選中後重新查 diff 用）
+  let lastCandidates = [];
+
   async function showMatchSuggestions(p) {
     const area = $('matchArea');
     area.innerHTML = '';
@@ -567,11 +576,19 @@
         candidates = rs.slice(0, 3);
       } catch (e) {}
     }
+    lastCandidates = candidates;
 
     if (candidates.length === 0) {
+      // 沒有對應，若 AI 有辨識到財產號 → 提供「新增為新財產」按鈕
+      const hasPN = !!p.property_number;
       area.innerHTML = `<div class="match-banner none">
-        🔍 <span class="count">找不到對應的既有財產 — 可能是新購或尚未匯入</span>
-      </div>`;
+        🔍 <span class="count">找不到對應的既有財產 — 可能是新購、汰換、或尚未匯入</span>
+      </div>
+      ${hasPN ? `
+      <button type="button" class="btn btn-primary btn-block" onclick="createInventoryFromDetection()" style="margin-top:8px;">
+        ➕ 新增為新財產（#${p.property_number}）
+      </button>` : ''}
+      `;
       return;
     }
 
@@ -585,16 +602,165 @@
           <div class="desc">${c.brand || ''} ${c.acquired_year ? '· 取得 '+c.acquired_year+'年' : ''} ${c.location_text ? '· '+c.location_text : ''}</div>
         </div>
       </div>
-    `).join('');
+    `).join('') + `<div id="invDiffArea"></div>`;
 
     area.querySelectorAll('.match-suggest').forEach(el => {
       el.addEventListener('click', () => {
         area.querySelectorAll('.match-suggest').forEach(x => x.classList.remove('selected'));
         el.classList.add('selected');
         vibrate(15);
+        // 觸發差異比對
+        const id = parseInt(el.dataset.id);
+        const cand = lastCandidates.find(c => c.id === id);
+        if (cand) renderInventoryDiff(cand);
       });
     });
+
+    // 若只有 1 筆建議 → 自動選中並立即顯示差異
+    if (candidates.length === 1) {
+      const el = area.querySelector('.match-suggest');
+      if (el) {
+        el.classList.add('selected');
+        renderInventoryDiff(candidates[0]);
+      }
+    }
   }
+
+  // ========== 比對 AI 辨識 ↔ 既有清冊，顯示差異 UI ==========
+  const INV_UPDATE_FIELDS = [
+    { key: 'brand', label: '廠牌', readFromForm: () => $('f_brand').querySelector('input').value.trim() },
+    { key: 'model', label: '型號', readFromForm: () => $('f_model').querySelector('input').value.trim() },
+    { key: 'acquired_year', label: '民國年', readFromForm: () => {
+      const v = $('f_roc_year').querySelector('input').value.trim();
+      return v ? parseInt(v) : null;
+    }},
+    { key: 'serial_number', label: '序號 S/N', readFromForm: () => $('f_serial_number').querySelector('input').value.trim() },
+  ];
+
+  function renderInventoryDiff(candidate) {
+    const diffEl = $('invDiffArea');
+    if (!diffEl || !candidate) return;
+
+    const changes = [];
+    INV_UPDATE_FIELDS.forEach(f => {
+      const newVal = f.readFromForm();
+      const oldVal = candidate[f.key];
+      // 空字串視為 null
+      const normOld = (oldVal === '' || oldVal == null) ? '' : String(oldVal);
+      const normNew = (newVal === '' || newVal == null) ? '' : String(newVal);
+      if (normOld !== normNew && normNew !== '') {
+        changes.push({ field: f.key, label: f.label, oldVal: normOld || '(空)', newVal: normNew });
+      }
+    });
+
+    // 檢查教室是否變更
+    if (candidate.classroom_code !== state.currentRoom.code) {
+      changes.push({
+        field: 'classroom_code',
+        label: '所在教室',
+        oldVal: candidate.classroom_code || '(未設定)',
+        newVal: state.currentRoom.code + ' ' + state.currentRoom.name
+      });
+    }
+
+    if (changes.length === 0) {
+      diffEl.innerHTML = `
+        <div class="inv-diff-panel no-diff">
+          <div class="inv-diff-title">✅ AI 辨識結果與清冊一致，無需更新</div>
+          <div class="inv-diff-desc">這台主機資料正確無誤，拍照紀錄會直接入庫。</div>
+        </div>`;
+      return;
+    }
+
+    diffEl.innerHTML = `
+      <div class="inv-diff-panel">
+        <div class="inv-diff-head">
+          <div class="inv-diff-title">📝 發現 ${changes.length} 個欄位與清冊不同（可能主機已汰換/更換）</div>
+          <label class="inv-diff-all">
+            <input type="checkbox" id="invDiffAll" checked> 全選
+          </label>
+        </div>
+        <div class="inv-diff-list">
+          ${changes.map(c => `
+            <label class="inv-diff-row">
+              <input type="checkbox" class="inv-diff-check" data-field="${c.field}" data-new="${(c.newVal || '').replace(/"/g, '&quot;')}" checked>
+              <div class="inv-diff-content">
+                <div class="inv-diff-label">${c.label}</div>
+                <div class="inv-diff-values">
+                  <span class="inv-diff-old">${c.oldVal}</span>
+                  <span class="inv-diff-arrow">→</span>
+                  <span class="inv-diff-new">${c.newVal}</span>
+                </div>
+              </div>
+            </label>
+          `).join('')}
+        </div>
+        <div class="inv-diff-hint">
+          💡 勾選的欄位會在按「儲存」時一起寫進財產清冊，讓這筆紀錄成為 #${candidate.property_number || candidate.id} 的最新狀態。
+        </div>
+      </div>`;
+
+    // 全選 toggle
+    $('invDiffAll')?.addEventListener('change', (e) => {
+      diffEl.querySelectorAll('.inv-diff-check').forEach(c => c.checked = e.target.checked);
+    });
+  }
+
+  // 表單欄位變更時，重新計算差異（單一 document listener，以 debounce 節流）
+  let _diffRerenderTimer = null;
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if (!t.closest('#f_brand, #f_model, #f_roc_year, #f_serial_number')) return;
+    clearTimeout(_diffRerenderTimer);
+    _diffRerenderTimer = setTimeout(() => {
+      const selected = document.querySelector('#matchArea .match-suggest.selected');
+      if (!selected) return;
+      const id = parseInt(selected.dataset.id);
+      const cand = lastCandidates.find(c => c.id === id);
+      if (cand) renderInventoryDiff(cand);
+    }, 300);
+  });
+
+  // ========== 新增為新財產（AI 辨識到財產號但沒對應到清冊）==========
+  window.createInventoryFromDetection = async () => {
+    const p = state.lastDetection?.parsed;
+    if (!p || !p.property_number) { toast('缺少財產編號', 'error'); return; }
+    if (!state.currentRoom) { toast('未選教室', 'error'); return; }
+    // 讀取表單最新值（使用者可能有手動修改）
+    const formVal = id => $(id).querySelector('input,select,textarea').value.trim() || null;
+    const brand = formVal('f_brand');
+    const model = formVal('f_model');
+    const rocYear = formVal('f_roc_year');
+    const serial = formVal('f_serial_number');
+
+    if (!confirm(`確認新增新財產 #${p.property_number}？\n\n廠牌：${brand || '(空)'}\n型號：${model || '(空)'}\n民國年：${rocYear || '(空)'}\n教室：${state.currentRoom.code} ${state.currentRoom.name}`)) return;
+
+    try {
+      const newItem = {
+        property_number: p.property_number,
+        item_name: (formVal('f_photo_type') || '').includes('筆電') ? '筆記型電腦' : '電腦主機',
+        brand: brand,
+        model: model,
+        acquired_year: rocYear ? parseInt(rocYear) : null,
+        classroom_code: state.currentRoom.code,
+        location_text: state.currentRoom.code,
+        serial_number: serial,
+      };
+      const row = await window.SMES_DB.insertInventoryItem(newItem);
+      toast(`✅ 已新增 #${p.property_number} 到財產清冊`, 'success');
+      // 重新搜尋以重新渲染 match 建議
+      await showMatchSuggestions(p);
+      // 自動選上新增的這筆
+      setTimeout(() => {
+        const el = document.querySelector(`.match-suggest[data-id="${row.id}"]`);
+        if (el) { el.classList.add('selected'); renderInventoryDiff(row); }
+      }, 100);
+    } catch (e) {
+      toast('新增失敗: ' + e.message, 'error');
+      console.error(e);
+    }
+  };
 
   // ============ 儲存 ============
   $('btnSave').addEventListener('click', async () => {
@@ -665,7 +831,40 @@
       record.photo_url = photoUrl;
       await window.SMES_DB.insertPhoto(record);
 
-      toast('✅ 已儲存，可繼續拍下一張', 'success');
+      // 🔄 同步更新財產清冊（若使用者勾選了差異欄位）
+      let invUpdated = 0;
+      if (matched_id) {
+        const checks = document.querySelectorAll('#invDiffArea .inv-diff-check:checked');
+        if (checks.length > 0) {
+          const patch = {};
+          checks.forEach(c => {
+            const field = c.dataset.field;
+            const newVal = c.dataset.new;
+            if (field === 'acquired_year') {
+              patch[field] = newVal ? parseInt(newVal) : null;
+            } else if (field === 'classroom_code') {
+              patch[field] = room.code;
+              patch['location_text'] = room.code;
+            } else {
+              patch[field] = newVal || null;
+            }
+          });
+          try {
+            await window.SMES_DB.updateInventoryItem(matched_id, patch);
+            invUpdated = checks.length;
+          } catch (err) {
+            console.error('[inv-update]', err);
+            toast('⚠️ 財產清冊更新失敗: ' + err.message, 'error');
+          }
+        }
+      }
+
+      toast(
+        invUpdated > 0
+          ? `✅ 已儲存 + 同步更新財產清冊 ${invUpdated} 個欄位`
+          : '✅ 已儲存，可繼續拍下一張',
+        'success'
+      );
       vibrate([30, 50, 30]);
 
       state.currentFile = null;
