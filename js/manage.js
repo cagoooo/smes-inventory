@@ -215,7 +215,7 @@
     const matchedIds = new Set(cache.photos.filter(p => p.matched_inventory_id).map(p => p.matched_inventory_id));
 
     $('invList').innerHTML = list.slice(0, 300).map(i => `
-      <div class="list-item">
+      <div class="list-item inv-row" data-id="${i.id}">
         <div class="row">
           <div class="info" style="flex:1;min-width:0;">
             <div class="title" style="font-family:monospace;">${i.property_number || '-'}</div>
@@ -227,10 +227,68 @@
               ${matchedIds.has(i.id) ? '<span class="tag" style="background:var(--success-soft);color:var(--success);">✓ 已拍</span>' : ''}
             </div>
           </div>
+          <button class="inv-history-btn" onclick="showInvHistory(${i.id}, '${(i.property_number || '').replace(/'/g, '')}');event.stopPropagation();">🕒 歷史</button>
         </div>
       </div>
     `).join('') + (list.length > 300 ? `<div style="text-align:center;padding:10px;color:var(--text-muted);font-size:12px;">僅顯示前 300 筆 (共 ${list.length})</div>` : '');
   }
+
+  // 顯示單筆財產的異動歷史
+  window.showInvHistory = async (id, pn) => {
+    const modal = $('invHistoryModal');
+    const backdrop = $('invHistoryBackdrop');
+    const body = $('invHistoryBody');
+    const title = $('invHistoryTitle');
+    if (!modal || !body) return;
+    title.innerHTML = `🕒 ${pn || '#' + id} 異動歷史`;
+    body.innerHTML = '<div class="empty"><div class="loading-lg"></div></div>';
+    modal.classList.add('show');
+    if (backdrop) backdrop.classList.add('show');
+    try {
+      const rows = await DB.listAuditByInventory(id, 100);
+      if (!rows.length) {
+        body.innerHTML = '<div class="empty">📭 尚無異動紀錄<br><small style="color:var(--text-muted);">（v7.3.2 之前的更新沒有記錄）</small></div>';
+        return;
+      }
+      const sourceIcon = { photo_recognition: '📷', manual: '✏️', excel_import: '📥', api: '🔌' };
+      const fieldLabel = {
+        brand: '廠牌', model: '型號', acquired_year: '購置民國年',
+        serial_number: '序號 S/N', classroom_code: '教室',
+        location_text: '位置', item_name: '品名',
+        _created: '🆕 新增', _deleted: '🗑 刪除'
+      };
+      body.innerHTML = '<div class="audit-timeline">' + rows.map(r => `
+        <div class="audit-item">
+          <div class="audit-time">${new Date(r.changed_at).toLocaleString('zh-TW', { hour12: false })}</div>
+          <div class="audit-main">
+            <div class="audit-head">
+              <span class="audit-source">${sourceIcon[r.source] || '📝'} ${r.source}</span>
+              <span class="audit-field">${fieldLabel[r.field_changed] || r.field_changed}</span>
+            </div>
+            ${r.field_changed === '_created' ? `
+              <div class="audit-change"><span class="audit-new-big">新增：${r.new_value || ''}</span></div>
+            ` : `
+              <div class="audit-change">
+                <span class="audit-old">${r.old_value || '(空)'}</span>
+                <span class="audit-arrow">→</span>
+                <span class="audit-new">${r.new_value || '(空)'}</span>
+              </div>
+            `}
+            <div class="audit-meta">
+              ${r.changed_by_email ? `👤 ${r.changed_by_email}` : ''}
+              ${r.notes ? `<span class="audit-notes">· ${r.notes}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      `).join('') + '</div>';
+    } catch (e) {
+      body.innerHTML = `<div class="empty">❌ 載入失敗：${e.message}</div>`;
+    }
+  };
+  window.closeInvHistory = () => {
+    $('invHistoryModal')?.classList.remove('show');
+    $('invHistoryBackdrop')?.classList.remove('show');
+  };
 
   $('invSearch').addEventListener('input', renderInventory);
   $('invRoomFilter').addEventListener('change', renderInventory);
@@ -1058,6 +1116,344 @@
     XLSX.utils.book_append_sheet(wb, ws, '觸屏+接線建議');
     XLSX.writeFile(wb, `石門觸屏_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
+
+  // ============ Tab: 盤點異動總覽報告 ============
+  let reportCache = null;
+
+  window.setReportRange = (preset) => {
+    const now = new Date();
+    let from, to;
+    if (preset === 'today') {
+      from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    } else if (preset === 'week') {
+      const day = now.getDay() || 7;
+      from = new Date(now); from.setDate(now.getDate() - day + 1); from.setHours(0,0,0,0);
+      to = new Date(now); to.setHours(23,59,59,999);
+    } else if (preset === 'month') {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    } else if (preset === 'semester') {
+      const m = now.getMonth();
+      // 上學期 8-1 月 / 下學期 2-7 月
+      if (m >= 7 || m <= 0) {
+        from = new Date(m >= 7 ? now.getFullYear() : now.getFullYear() - 1, 7, 1);
+        to = new Date(m >= 7 ? now.getFullYear() + 1 : now.getFullYear(), 0, 31, 23, 59, 59);
+      } else {
+        from = new Date(now.getFullYear(), 1, 1);
+        to = new Date(now.getFullYear(), 6, 31, 23, 59, 59);
+      }
+    }
+    if (from && to) {
+      $('reportFrom').value = from.toISOString().slice(0, 10);
+      $('reportTo').value = to.toISOString().slice(0, 10);
+      renderReport();
+    }
+  };
+
+  async function renderReport() {
+    const fromStr = $('reportFrom').value;
+    const toStr = $('reportTo').value;
+    if (!fromStr || !toStr) { $('reportSections').innerHTML = '<div class="empty">請先選擇日期範圍</div>'; return; }
+
+    const fromISO = new Date(fromStr + 'T00:00:00').toISOString();
+    const toISO = new Date(toStr + 'T23:59:59').toISOString();
+
+    $('reportSections').innerHTML = '<div class="loading-lg"></div>';
+
+    try {
+      const audits = await DB.listAuditBetween(fromISO, toISO, 2000);
+      reportCache = { audits, from: fromISO, to: toISO };
+
+      // 分類統計
+      const stats = {
+        created: audits.filter(a => a.field_changed === '_created'),
+        transferred: audits.filter(a => a.field_changed === 'classroom_code'),
+        brandChange: audits.filter(a => a.field_changed === 'brand'),
+        modelChange: audits.filter(a => a.field_changed === 'model'),
+        yearChange: audits.filter(a => a.field_changed === 'acquired_year'),
+        serialChange: audits.filter(a => a.field_changed === 'serial_number'),
+      };
+      const uniqueItems = new Set(audits.map(a => a.inventory_id).filter(Boolean));
+      const totalChanges = audits.length;
+
+      // KPI
+      $('reportKPI').innerHTML = `
+        <div class="kpi-card"><div class="label">影響設備</div><div class="val">${uniqueItems.size}</div><div class="sub">台</div></div>
+        <div class="kpi-card success"><div class="label">新增</div><div class="val">${stats.created.length}</div><div class="sub">台</div></div>
+        <div class="kpi-card accent"><div class="label">搬移教室</div><div class="val">${stats.transferred.length}</div><div class="sub">次</div></div>
+        <div class="kpi-card danger"><div class="label">總異動</div><div class="val">${totalChanges}</div><div class="sub">筆</div></div>
+      `;
+
+      // 各類別明細
+      const section = (title, rows, color, renderRow) => rows.length ? `
+        <details class="report-section" ${rows.length <= 20 ? 'open' : ''}>
+          <summary style="border-left-color:${color};">${title} · ${rows.length} 筆</summary>
+          <div class="report-list">${rows.map(renderRow).join('')}</div>
+        </details>` : '';
+
+      const roomNameMap = Object.fromEntries(cache.rooms.map(r => [r.code, r.name]));
+      const roomDisp = code => code ? `${code}${roomNameMap[code] ? ' ' + roomNameMap[code] : ''}` : '(未設定)';
+      const time = t => new Date(t).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+
+      $('reportSections').innerHTML = `
+        ${section('🆕 新增財產', stats.created, 'var(--success)', r => `
+          <div class="report-row">
+            <span class="r-time">${time(r.changed_at)}</span>
+            <span class="r-pn">#${r.property_number || r.inventory_id}</span>
+            <span class="r-detail">${r.new_value || ''}</span>
+            <span class="r-user">${r.changed_by_email || '—'}</span>
+          </div>`)}
+
+        ${section('🚛 搬移教室', stats.transferred, 'var(--primary)', r => `
+          <div class="report-row">
+            <span class="r-time">${time(r.changed_at)}</span>
+            <span class="r-pn">#${r.property_number || r.inventory_id}</span>
+            <span class="r-detail">${roomDisp(r.old_value)} → <b>${roomDisp(r.new_value)}</b></span>
+            <span class="r-user">${r.changed_by_email || '—'}</span>
+          </div>`)}
+
+        ${section('🏷 廠牌更新', stats.brandChange, 'var(--accent)', r => `
+          <div class="report-row">
+            <span class="r-time">${time(r.changed_at)}</span>
+            <span class="r-pn">#${r.property_number || r.inventory_id}</span>
+            <span class="r-detail"><s>${r.old_value || '(空)'}</s> → <b>${r.new_value || '(空)'}</b></span>
+            <span class="r-user">${r.changed_by_email || '—'}</span>
+          </div>`)}
+
+        ${section('💻 型號更新', stats.modelChange, 'var(--accent)', r => `
+          <div class="report-row">
+            <span class="r-time">${time(r.changed_at)}</span>
+            <span class="r-pn">#${r.property_number || r.inventory_id}</span>
+            <span class="r-detail"><s>${r.old_value || '(空)'}</s> → <b>${r.new_value || '(空)'}</b></span>
+            <span class="r-user">${r.changed_by_email || '—'}</span>
+          </div>`)}
+
+        ${section('📅 購置年度更新', stats.yearChange, 'var(--warning)', r => `
+          <div class="report-row">
+            <span class="r-time">${time(r.changed_at)}</span>
+            <span class="r-pn">#${r.property_number || r.inventory_id}</span>
+            <span class="r-detail">民國 ${r.old_value || '?'} → <b>${r.new_value || '?'}</b> 年</span>
+            <span class="r-user">${r.changed_by_email || '—'}</span>
+          </div>`)}
+
+        ${section('🔖 序號更新', stats.serialChange, 'var(--purple)', r => `
+          <div class="report-row">
+            <span class="r-time">${time(r.changed_at)}</span>
+            <span class="r-pn">#${r.property_number || r.inventory_id}</span>
+            <span class="r-detail">${(r.old_value || '(空)').slice(0, 20)} → <b>${(r.new_value || '(空)').slice(0, 20)}</b></span>
+            <span class="r-user">${r.changed_by_email || '—'}</span>
+          </div>`)}
+
+        ${audits.length === 0 ? '<div class="empty">📭 此期間無異動紀錄</div>' : ''}
+      `;
+    } catch (e) {
+      $('reportSections').innerHTML = `<div class="empty">❌ 載入失敗：${e.message}</div>`;
+      console.error(e);
+    }
+  }
+
+  window.exportReportExcel = () => {
+    if (!reportCache?.audits?.length) { toast('請先載入期間報告', 'error'); return; }
+    const roomNameMap = Object.fromEntries(cache.rooms.map(r => [r.code, r.name]));
+    const fieldLabel = {
+      brand: '廠牌', model: '型號', acquired_year: '購置民國年',
+      serial_number: '序號', classroom_code: '教室',
+      location_text: '位置', item_name: '品名',
+      _created: '🆕 新增', _deleted: '🗑 刪除'
+    };
+    const rows = reportCache.audits.map(a => ({
+      '異動時間': new Date(a.changed_at).toLocaleString('zh-TW', { hour12: false }),
+      '財產編號': a.property_number || `id:${a.inventory_id}`,
+      '異動類型': fieldLabel[a.field_changed] || a.field_changed,
+      '舊值': a.old_value || '',
+      '新值': a.new_value || '',
+      '目前廠牌': a.current_brand || '',
+      '目前型號': a.current_model || '',
+      '目前教室': a.current_classroom ? `${a.current_classroom}${roomNameMap[a.current_classroom] ? ' ' + roomNameMap[a.current_classroom] : ''}` : '',
+      '操作者': a.changed_by_email || '',
+      '來源': a.source,
+      '備註': a.notes || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 18 }, { wch: 18 },
+      { wch: 14 }, { wch: 22 }, { wch: 20 }, { wch: 28 }, { wch: 16 }, { wch: 36 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '異動明細');
+    const fname = `石門盤點異動_${$('reportFrom').value}_${$('reportTo').value}.xlsx`;
+    XLSX.writeFile(wb, fname);
+    toast(`✅ 已匯出 ${rows.length} 筆`, 'success');
+  };
+
+  window.exportReportPDF = async () => {
+    if (!reportCache?.audits?.length) { toast('請先載入期間報告', 'error'); return; }
+    const btn = event.target;
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-inline"></span> 產生中…';
+    try {
+      // 沿用 monthly-report.js 的 jsPDF 能力
+      if (!window.jspdf) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+      await generateAuditReportPDF(reportCache);
+      toast('✅ PDF 已下載', 'success');
+    } catch (e) {
+      toast('PDF 產生失敗: ' + e.message, 'error');
+      console.error(e);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  };
+
+  async function generateAuditReportPDF(data) {
+    const DPI = 300;
+    const MM = DPI / 25.4;
+
+    // 用 Canvas 畫，避免中文亂碼
+    const canvas = document.createElement('canvas');
+    canvas.width = 210 * MM;
+    canvas.height = 297 * MM;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const FONT = '"PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+    const mm = n => Math.round(n * MM);
+
+    // 標題
+    ctx.fillStyle = '#0a84ff';
+    ctx.font = `bold ${mm(7)}px ${FONT}`;
+    ctx.fillText('📋 石門國小 財產盤點異動報告', mm(15), mm(20));
+
+    ctx.fillStyle = '#666';
+    ctx.font = `${mm(4)}px ${FONT}`;
+    const fromD = new Date(data.from).toLocaleDateString('zh-TW');
+    const toD = new Date(data.to).toLocaleDateString('zh-TW');
+    ctx.fillText(`期間：${fromD} — ${toD}`, mm(15), mm(28));
+    ctx.fillText(`產出時間：${new Date().toLocaleString('zh-TW')}`, mm(15), mm(33));
+
+    // 摘要
+    const stats = {
+      created: data.audits.filter(a => a.field_changed === '_created').length,
+      transferred: data.audits.filter(a => a.field_changed === 'classroom_code').length,
+      brandChange: data.audits.filter(a => a.field_changed === 'brand').length,
+      modelChange: data.audits.filter(a => a.field_changed === 'model').length,
+    };
+    const uniqueItems = new Set(data.audits.map(a => a.inventory_id).filter(Boolean)).size;
+
+    ctx.fillStyle = '#000';
+    ctx.font = `bold ${mm(5)}px ${FONT}`;
+    ctx.fillText('📊 摘要統計', mm(15), mm(45));
+
+    const kpis = [
+      { label: '影響設備', val: uniqueItems, unit: '台', color: '#0a84ff' },
+      { label: '新增財產', val: stats.created, unit: '台', color: '#34c759' },
+      { label: '搬移教室', val: stats.transferred, unit: '次', color: '#ff9500' },
+      { label: '型號更新', val: stats.brandChange + stats.modelChange, unit: '筆', color: '#ff3b30' },
+    ];
+    const kpiY = mm(55);
+    const kpiW = mm(42);
+    kpis.forEach((k, i) => {
+      const x = mm(15) + i * (kpiW + mm(3));
+      ctx.fillStyle = '#f2f2f7';
+      ctx.fillRect(x, kpiY, kpiW, mm(22));
+      ctx.fillStyle = k.color;
+      ctx.fillRect(x, kpiY, kpiW, mm(2));
+      ctx.fillStyle = '#666';
+      ctx.font = `${mm(3.2)}px ${FONT}`;
+      ctx.fillText(k.label, x + mm(4), kpiY + mm(9));
+      ctx.fillStyle = k.color;
+      ctx.font = `bold ${mm(9)}px ${FONT}`;
+      ctx.fillText(String(k.val), x + mm(4), kpiY + mm(18));
+      ctx.fillStyle = '#999';
+      ctx.font = `${mm(3)}px ${FONT}`;
+      ctx.fillText(k.unit, x + mm(4) + ctx.measureText(String(k.val)).width + mm(2), kpiY + mm(18));
+    });
+
+    // 明細列表（最多 30 筆）
+    ctx.fillStyle = '#000';
+    ctx.font = `bold ${mm(5)}px ${FONT}`;
+    ctx.fillText('📝 異動明細（最多顯示 30 筆，完整資料請匯出 Excel）', mm(15), mm(92));
+
+    const fieldLabel = {
+      brand: '廠牌', model: '型號', acquired_year: '購置年',
+      serial_number: '序號', classroom_code: '教室',
+      _created: '🆕 新增', _deleted: '🗑 刪除'
+    };
+
+    let y = mm(100);
+    data.audits.slice(0, 30).forEach((a, idx) => {
+      if (y > mm(285)) return;
+      const time = new Date(a.changed_at).toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+      const label = fieldLabel[a.field_changed] || a.field_changed;
+
+      ctx.fillStyle = idx % 2 === 0 ? '#fff' : '#f9f9fb';
+      ctx.fillRect(mm(15), y - mm(3.5), mm(180), mm(6.5));
+
+      ctx.fillStyle = '#999';
+      ctx.font = `${mm(2.8)}px ${FONT}`;
+      ctx.fillText(time, mm(17), y);
+
+      ctx.fillStyle = '#000';
+      ctx.font = `bold ${mm(3)}px ${FONT}`;
+      ctx.fillText(`#${a.property_number || a.inventory_id}`, mm(35), y);
+
+      ctx.fillStyle = '#0a84ff';
+      ctx.fillText(label, mm(65), y);
+
+      ctx.fillStyle = '#444';
+      ctx.font = `${mm(2.8)}px ${FONT}`;
+      const detail = a.field_changed === '_created'
+        ? (a.new_value || '').slice(0, 40)
+        : `${(a.old_value || '空').slice(0, 18)} → ${(a.new_value || '空').slice(0, 18)}`;
+      ctx.fillText(detail, mm(85), y);
+
+      ctx.fillStyle = '#999';
+      ctx.font = `${mm(2.5)}px ${FONT}`;
+      ctx.fillText((a.changed_by_email || '').slice(0, 18), mm(155), y);
+
+      y += mm(6.5);
+    });
+
+    if (data.audits.length > 30) {
+      ctx.fillStyle = '#999';
+      ctx.font = `italic ${mm(3)}px ${FONT}`;
+      ctx.fillText(`... 另外 ${data.audits.length - 30} 筆請參考 Excel 明細`, mm(17), y + mm(3));
+    }
+
+    // 頁尾
+    ctx.fillStyle = '#999';
+    ctx.font = `${mm(2.8)}px ${FONT}`;
+    ctx.fillText('石門國民小學 · 資訊組 · 財產盤點系統', mm(15), mm(290));
+
+    // 轉 PDF
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+    const fname = `石門盤點報告_${$('reportFrom').value}_${$('reportTo').value}.pdf`;
+    pdf.save(fname);
+  }
+
+  // Tab 切換時載入
+  $('tabBar').querySelectorAll('button[data-tab="report"]').forEach(b => {
+    b.addEventListener('click', () => {
+      if (!$('reportFrom').value) setReportRange('month');
+      else renderReport();
+    });
+  });
+  ['reportFrom', 'reportTo'].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener('change', renderReport);
+  });
 
   // ============ Start ============
   loadAll();

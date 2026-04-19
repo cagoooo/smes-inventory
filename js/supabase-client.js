@@ -110,6 +110,22 @@
       return rows[0];
     },
 
+    // 異動歷史
+    async insertAuditLogs(rows) {
+      if (!rows || !rows.length) return null;
+      return rest('inventory_audit_log', {
+        method: 'POST',
+        body: JSON.stringify(rows)
+      });
+    },
+    async listAuditByInventory(inventoryId, limit = 50) {
+      return rest(`inventory_audit_log?inventory_id=eq.${inventoryId}&select=*&order=changed_at.desc&limit=${limit}`);
+    },
+    async listAuditBetween(fromISO, toISO, limit = 2000) {
+      const q = `inventory_audit_with_item?changed_at=gte.${encodeURIComponent(fromISO)}&changed_at=lte.${encodeURIComponent(toISO)}&order=changed_at.desc&limit=${limit}`;
+      return rest(q);
+    },
+
     // 照片紀錄
     async listPhotosByRoom(code, limit = 50) {
       return rest(`photo_records?classroom_code=eq.${encodeURIComponent(code)}&select=*&order=created_at.desc&limit=${limit}`);

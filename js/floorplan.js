@@ -142,7 +142,23 @@
     return 'done';
   }
 
-  function renderFloor(floor, rooms, statsMap, selectedCode) {
+  // 本次盤點狀態：依本月是否有拍照紀錄區分
+  // recent = 本月有拍 / stale = 以前拍過但本月沒拍 / never = 從沒拍過
+  function roundProgressStatus(stat) {
+    const inv = stat?.inventory_count || 0;
+    if (inv === 0) return 'no-inv';
+    const recent = stat?.recent_photo_count || 0;
+    const everPhoto = stat?.photo_count || 0;
+    if (recent > 0) {
+      // 本月有拍 — 依拍的百分比分級
+      if (recent >= inv) return 'round-done';
+      return 'round-partial';
+    }
+    if (everPhoto > 0) return 'round-stale';  // 以前有拍但本月沒拍
+    return 'round-never';  // 從沒拍過
+  }
+
+  function renderFloor(floor, rooms, statsMap, selectedCode, mode) {
     const data = FLOORS[floor];
     if (!data) return '';
     const roomMap = Object.fromEntries(rooms.map(r => [r.code, r]));
@@ -153,16 +169,30 @@
         return `<div class="fp-cell fp-empty" style="grid-column: span ${cell.span||1};">${cell.code}</div>`;
       }
       const st = statsMap[cell.code] || {};
-      const status = progressStatus(st);
       const inv = st.inventory_count || 0;
       const photo = st.photo_count || 0;
-      const pct = inv > 0 ? Math.round(photo / inv * 100) : 0;
+      const recent = st.recent_photo_count || 0;
       const isSelected = selectedCode === cell.code ? ' selected' : '';
       const spanStyle = cell.span ? ` style="grid-column: span ${cell.span};"` : '';
-      return `<div class="fp-cell fp-${status}${isSelected}" data-code="${cell.code}"${spanStyle}>
+
+      // 依模式切換著色
+      let statusClass, pctLine;
+      if (mode === 'round') {
+        // 本月盤點模式
+        statusClass = `fp-${roundProgressStatus(st)}`;
+        if (inv === 0) pctLine = '<div class="fp-pct fp-no-inv">-</div>';
+        else pctLine = `<div class="fp-pct">本月 ${recent}/${inv}</div>`;
+      } else {
+        // 預設：歷史累積
+        statusClass = `fp-${progressStatus(st)}`;
+        const pct = inv > 0 ? Math.round(photo / inv * 100) : 0;
+        pctLine = inv > 0 ? `<div class="fp-pct">${photo}/${inv}${inv>0 ? ` · ${pct}%`:''}</div>` : '<div class="fp-pct fp-no-inv">-</div>';
+      }
+
+      return `<div class="fp-cell ${statusClass}${isSelected}" data-code="${cell.code}"${spanStyle}>
         <div class="fp-code">${cell.code}</div>
         <div class="fp-name">${r.name.replace(/\([^)]*\)/g, '').split('/')[0]}</div>
-        ${inv > 0 ? `<div class="fp-pct">${photo}/${inv}${inv>0 ? ` · ${pct}%`:''}</div>` : '<div class="fp-pct fp-no-inv">-</div>'}
+        ${pctLine}
       </div>`;
     };
 
@@ -189,26 +219,53 @@
     </div>`;
   }
 
-  function renderAll(rooms, stats, onClickCode, selectedCode) {
+  function renderAll(rooms, stats, onClickCode, selectedCode, options = {}) {
     const statsMap = Object.fromEntries((stats || []).map(s => [s.code, s]));
     const container = document.createElement('div');
     container.className = 'fp-container';
+    const mode = options.mode || 'all';  // 'all' (歷史累積) or 'round' (本月盤點)
 
-    // 圖例
-    container.innerHTML = `
+    // 模式切換 toggle（若 options.showModeToggle 為 true）
+    const toggleHTML = options.showModeToggle ? `
+      <div class="fp-mode-toggle">
+        <button class="fp-mode-btn ${mode === 'all' ? 'active' : ''}" data-mode="all">📊 歷史累積</button>
+        <button class="fp-mode-btn ${mode === 'round' ? 'active' : ''}" data-mode="round">🎯 本月盤點進度</button>
+      </div>
+    ` : '';
+
+    // 圖例依模式切換
+    const legendHTML = mode === 'round' ? `
+      <div class="fp-legend">
+        <span class="fp-leg fp-round-never">🔴 從未拍過</span>
+        <span class="fp-leg fp-round-stale">🟡 以前拍過但本月沒拍</span>
+        <span class="fp-leg fp-round-partial">🟠 本月部分</span>
+        <span class="fp-leg fp-round-done">🟢 本月完成</span>
+        <span class="fp-leg fp-no-inv">⚪ 無財產</span>
+      </div>
+    ` : `
       <div class="fp-legend">
         <span class="fp-leg fp-todo">🔴 未拍</span>
         <span class="fp-leg fp-partial">🟡 部分</span>
         <span class="fp-leg fp-done">🟢 已完成</span>
         <span class="fp-leg fp-no-inv">⚪ 無財產</span>
       </div>
-      ${[3, 2, 1, 0].map(f => renderFloor(f, rooms, statsMap, selectedCode)).join('')}
     `;
+
+    container.innerHTML = toggleHTML + legendHTML +
+      [3, 2, 1, 0].map(f => renderFloor(f, rooms, statsMap, selectedCode, mode)).join('');
 
     container.querySelectorAll('.fp-cell[data-code]').forEach(el => {
       el.addEventListener('click', () => {
         const code = el.dataset.code;
         if (onClickCode) onClickCode(code);
+      });
+    });
+
+    // 模式切換按鈕
+    container.querySelectorAll('.fp-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const newMode = btn.dataset.mode;
+        if (options.onModeChange) options.onModeChange(newMode);
       });
     });
 

@@ -11,7 +11,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>石門盤點 · 管理後台</title>
-<link rel="stylesheet" href="css/style.css?v=7.3.1">
+<link rel="stylesheet" href="css/style.css?v=7.3.2">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -68,6 +68,7 @@
     <button data-tab="inv">📦 財產</button>
     <button data-tab="network">🌐 網路</button>
     <button data-tab="touchscreen">🖥 觸屏</button>
+    <button data-tab="report">📋 盤點報告</button>
     <button data-tab="qr">🏷 QR 標籤</button>
     <button data-tab="import">📥 匯入</button>
   </div>
@@ -227,6 +228,53 @@
       <div id="ipConflictWarning" style="display:none;"></div>
 
       <div id="netList"></div>
+    </div>
+  </div>
+
+  <!-- Tab: 盤點報告 -->
+  <div class="tab-content" id="tab-report" style="display:none;">
+    <div class="card">
+      <h2>📋 盤點異動總覽報告</h2>
+      <p style="font-size:13px;color:var(--text-soft);line-height:1.5;margin:6px 0 14px;">
+        查看指定期間內的所有財產異動（新增 / 修改 / 搬移）。可產出 PDF 月報表給主任，或 Excel 明細存查。
+      </p>
+
+      <!-- 期間選擇 -->
+      <div class="toolbar-row" style="margin-bottom:14px;">
+        <label style="font-size:13px;font-weight:600;color:var(--text-soft);white-space:nowrap;">期間：</label>
+        <input id="reportFrom" type="date" class="toolbar-input toolbar-grow">
+        <span style="color:var(--text-muted);">—</span>
+        <input id="reportTo" type="date" class="toolbar-input toolbar-grow">
+        <button class="btn btn-ghost" onclick="setReportRange('today')">今天</button>
+        <button class="btn btn-ghost" onclick="setReportRange('week')">本週</button>
+        <button class="btn btn-primary" onclick="setReportRange('month')">本月</button>
+        <button class="btn btn-ghost" onclick="setReportRange('semester')">本學期</button>
+      </div>
+
+      <!-- 摘要 KPI -->
+      <div class="kpi-grid" id="reportKPI" style="margin-bottom:14px;"></div>
+
+      <!-- 匯出按鈕 -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <button class="btn btn-success" onclick="exportReportExcel()">📊 匯出 Excel 明細</button>
+        <button class="btn btn-primary" onclick="exportReportPDF()">📄 產生月報表 PDF</button>
+      </div>
+
+      <!-- 分類報告 -->
+      <div id="reportSections"></div>
+    </div>
+  </div>
+
+  <!-- 單筆財產異動歷史 Modal -->
+  <div class="sheet-backdrop" id="invHistoryBackdrop" onclick="closeInvHistory()"></div>
+  <div class="sheet" id="invHistoryModal">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h3 id="invHistoryTitle">🕒 異動歷史</h3>
+      <button class="sheet-close" onclick="closeInvHistory()">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div id="invHistoryBody"></div>
     </div>
   </div>
 
@@ -390,24 +438,24 @@
 </div><!-- /appShell -->
 
 <script src="config.js"></script>
-<script src="js/auth.js?v=7.3.1"></script>
-<script src="js/supabase-client.js?v=7.3.1"></script>
-<script src="js/floorplan.js?v=7.3.1"></script>
-<script src="js/dashboard.js?v=7.3.1"></script>
-<script src="js/qr-labels.js?v=7.3.1"></script>
-<script src="js/monthly-report.js?v=7.3.1"></script>
-<script src="js/veyon-export.js?v=7.3.1"></script>
-<script src="js/network-tools.js?v=7.3.1"></script>
-<script src="js/touchscreen-ports.js?v=7.3.1"></script>
-<script src="js/error-monitor.js?v=7.3.1"></script>
-<script src="js/version-check.js?v=7.3.1"></script>
+<script src="js/auth.js?v=7.3.2"></script>
+<script src="js/supabase-client.js?v=7.3.2"></script>
+<script src="js/floorplan.js?v=7.3.2"></script>
+<script src="js/dashboard.js?v=7.3.2"></script>
+<script src="js/qr-labels.js?v=7.3.2"></script>
+<script src="js/monthly-report.js?v=7.3.2"></script>
+<script src="js/veyon-export.js?v=7.3.2"></script>
+<script src="js/network-tools.js?v=7.3.2"></script>
+<script src="js/touchscreen-ports.js?v=7.3.2"></script>
+<script src="js/error-monitor.js?v=7.3.2"></script>
+<script src="js/version-check.js?v=7.3.2"></script>
 <script>
   SMES_AUTH.initClient();
   SMES_AUTH.initSession();
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/manage.js?v=7.3.1';
+      s.src = 'js/manage.js?v=7.3.2';
       document.body.appendChild(s);
     }
   });

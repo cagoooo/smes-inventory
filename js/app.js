@@ -283,17 +283,55 @@
 
   // ============ Bottom Sheet ============
   let currentView = 'list';
+  state.fpMode = localStorage.getItem('smes_fp_mode') || 'all';  // 'all' or 'round'
 
-  function renderFloorplanView() {
+  async function renderFloorplanView() {
     if (!window.SMES_FLOORPLAN) return;
+
+    let stats = state.stats || [];
+
+    // 本月盤點模式 → 查詢本月拍照紀錄並計算 recent_photo_count
+    if (state.fpMode === 'round') {
+      try {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const isoStart = startOfMonth.toISOString();
+
+        const url = `${window.SMES_CONFIG.SUPABASE_URL}/rest/v1/photo_records?created_at=gte.${encodeURIComponent(isoStart)}&select=classroom_code`;
+        const headers = {
+          apikey: window.SMES_CONFIG.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${window.SMES_AUTH?.getAccessToken?.() || window.SMES_CONFIG.SUPABASE_ANON_KEY}`
+        };
+        const recentPhotos = await fetch(url, { headers }).then(r => r.json());
+
+        const counts = {};
+        recentPhotos.forEach(p => {
+          if (p.classroom_code) counts[p.classroom_code] = (counts[p.classroom_code] || 0) + 1;
+        });
+        stats = stats.map(s => ({ ...s, recent_photo_count: counts[s.code] || 0 }));
+      } catch (e) {
+        console.warn('[floorplan round mode]', e);
+      }
+    }
+
     const el = window.SMES_FLOORPLAN.renderAll(
       state.rooms,
-      state.stats || [],
+      stats,
       (code) => {
         const r = state.rooms.find(x => x.code === code);
         if (r) selectRoom(r);
       },
-      state.currentRoom?.code
+      state.currentRoom?.code,
+      {
+        mode: state.fpMode,
+        showModeToggle: true,
+        onModeChange: (newMode) => {
+          state.fpMode = newMode;
+          try { localStorage.setItem('smes_fp_mode', newMode); } catch {}
+          renderFloorplanView();
+        }
+      }
     );
     const wrap = $('floorplanView');
     wrap.innerHTML = '';
@@ -784,6 +822,19 @@
         serial_number: serial,
       };
       const row = await window.SMES_DB.insertInventoryItem(newItem);
+      // 寫入 audit log（新增）
+      const user = window.SMES_AUTH?.getUser?.();
+      window.SMES_DB.insertAuditLogs([{
+        inventory_id: row.id,
+        property_number: row.property_number,
+        changed_by: user?.id || null,
+        changed_by_email: user?.email || null,
+        field_changed: '_created',
+        old_value: null,
+        new_value: `${newItem.brand || ''} ${newItem.model || ''} @ ${state.currentRoom.code}`.trim(),
+        source: 'photo_recognition',
+        notes: `由 AI 辨識自動新增（拍於 ${state.currentRoom.code} ${state.currentRoom.name}）`
+      }]).catch(err => console.warn('[audit-log]', err));
       toast(`✅ 已新增 #${p.property_number} 到財產清冊`, 'success');
       // 重新搜尋以重新渲染 match 建議
       await showMatchSuggestions(p);
@@ -865,29 +916,56 @@
       // 線上：直接上傳
       const photoUrl = await window.SMES_DB.uploadPhoto(state.currentFile, fileName);
       record.photo_url = photoUrl;
-      await window.SMES_DB.insertPhoto(record);
+      const insertedPhoto = await window.SMES_DB.insertPhoto(record);
+      const photoRecordId = insertedPhoto?.id || null;
 
-      // 🔄 同步更新財產清冊（若使用者勾選了差異欄位）
+      // 🔄 同步更新財產清冊（若使用者勾選了差異欄位）+ 寫入異動歷史
       let invUpdated = 0;
       if (matched_id) {
         const checks = document.querySelectorAll('#invDiffArea .inv-diff-check:checked');
         if (checks.length > 0) {
+          // 找到原 candidate 以便 audit log 記錄舊值
+          const candidate = lastCandidates.find(c => c.id === matched_id);
+
           const patch = {};
+          const auditRows = [];
           checks.forEach(c => {
             const field = c.dataset.field;
             const newVal = c.dataset.new;
+            let finalNewVal = newVal;
             if (field === 'acquired_year') {
               patch[field] = newVal ? parseInt(newVal) : null;
+              finalNewVal = newVal;
             } else if (field === 'classroom_code') {
               patch[field] = room.code;
               patch['location_text'] = room.code;
+              finalNewVal = room.code;
             } else {
               patch[field] = newVal || null;
             }
+            // 組 audit log row
+            const oldVal = candidate ? candidate[field] : null;
+            auditRows.push({
+              inventory_id: matched_id,
+              property_number: candidate?.property_number || null,
+              changed_by: user?.id || null,
+              changed_by_email: user?.email || null,
+              field_changed: field,
+              old_value: oldVal != null ? String(oldVal) : null,
+              new_value: finalNewVal != null ? String(finalNewVal) : null,
+              source: 'photo_recognition',
+              photo_record_id: photoRecordId,
+              notes: `拍照自動辨識更新（${room.code} ${room.name}）`
+            });
           });
+
           try {
             await window.SMES_DB.updateInventoryItem(matched_id, patch);
             invUpdated = checks.length;
+            // 寫入 audit log（不阻斷主流程）
+            window.SMES_DB.insertAuditLogs(auditRows).catch(err => {
+              console.warn('[audit-log insert]', err);
+            });
           } catch (err) {
             console.error('[inv-update]', err);
             toast('⚠️ 財產清冊更新失敗: ' + err.message, 'error');
