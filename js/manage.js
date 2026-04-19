@@ -840,6 +840,225 @@
     }
   };
 
+  // ============ Tab: 觸屏顯示器 ============
+  let tsCache = null;
+
+  async function loadTouchscreens() {
+    if (tsCache) return tsCache;
+    try {
+      tsCache = await DB.listTouchscreens();
+      return tsCache;
+    } catch (e) {
+      console.error('[touchscreens]', e);
+      return [];
+    }
+  }
+
+  // 幫一個教室找「主要班級主機」（優先班級教師機）
+  function pickMainPcForRoom(classroomCode) {
+    if (!classroomCode) return null;
+    const invs = cache.inventory.filter(i =>
+      i.classroom_code === classroomCode &&
+      i.item_name && (i.item_name.includes('電腦') || i.item_name.includes('主機'))
+    );
+    if (!invs.length) return null;
+    // 優先最新購置年份（代表目前主力）
+    invs.sort((a, b) => (b.acquired_year || 0) - (a.acquired_year || 0));
+    return invs[0];
+  }
+
+  async function renderTouchscreen() {
+    const list = await loadTouchscreens();
+    if (!list.length) {
+      $('tsList').innerHTML = '<div class="empty">📦 尚無觸屏資料</div>';
+      return;
+    }
+
+    // KPI 統計
+    const total = list.length;
+    const byUrg = {
+      urgent: list.filter(t => t.urgency?.includes('★★★')).length,
+      thisYr: list.filter(t => t.urgency?.includes('★★☆')).length,
+      nextYr: list.filter(t => t.urgency?.includes('★☆☆')).length,
+      ok:     list.filter(t => t.urgency?.includes('✓')).length,
+    };
+    $('touchscreenKPI').innerHTML = `
+      <div class="kpi-card"><div class="label">總觸屏</div><div class="val">${total}</div><div class="sub">台</div></div>
+      <div class="kpi-card danger"><div class="label">立即汰換</div><div class="val">${byUrg.urgent}</div><div class="sub">★★★</div></div>
+      <div class="kpi-card accent"><div class="label">今年到期</div><div class="val">${byUrg.thisYr}</div><div class="sub">★★☆</div></div>
+      <div class="kpi-card success"><div class="label">正常使用</div><div class="val">${byUrg.ok}</div><div class="sub">✓</div></div>
+    `;
+
+    // 接線相容性總覽
+    let compatStat = { best: 0, ok: 0, warn: 0, danger: 0, noPc: 0 };
+    list.forEach(ts => {
+      const pc = pickMainPcForRoom(ts.classroom_code);
+      if (!pc) { compatStat.noPc++; return; }
+      const ports = window.SMES_TSPORTS.portsOf(pc.brand, pc.model, pc.acquired_year);
+      const adv = window.SMES_TSPORTS.connectionAdvice(ports, ts);
+      compatStat[adv.level]++;
+    });
+    $('tsCompatSummary').innerHTML = `
+      <div class="ts-compat-summary">
+        <div class="ts-compat-chip best">✅ 最佳連線 <b>${compatStat.best}</b> 台</div>
+        <div class="ts-compat-chip ok">🔶 需轉接 <b>${compatStat.ok}</b> 台</div>
+        <div class="ts-compat-chip warn">⚠️ 僅 VGA <b>${compatStat.warn}</b> 台</div>
+        <div class="ts-compat-chip danger">❌ 不相容 <b>${compatStat.danger}</b> 台</div>
+        <div class="ts-compat-chip muted">— 無對應主機 <b>${compatStat.noPc}</b> 台</div>
+      </div>
+    `;
+
+    applyTsFilter();
+  }
+
+  function applyTsFilter() {
+    if (!tsCache) return;
+    const kw = ($('tsSearch')?.value || '').trim().toLowerCase();
+    const urgFilter = $('tsUrgency')?.value || '';
+    const brandFilter = $('tsBrand')?.value || '';
+
+    let list = tsCache;
+    if (urgFilter) list = list.filter(t => t.urgency?.includes(urgFilter));
+    if (brandFilter) list = list.filter(t => t.brand === brandFilter);
+    if (kw) list = list.filter(t =>
+      (t.property_number || '').toLowerCase().includes(kw) ||
+      (t.classroom_code || '').toLowerCase().includes(kw) ||
+      (t.location_text || '').toLowerCase().includes(kw) ||
+      (t.brand || '').toLowerCase().includes(kw) ||
+      (t.model_code || '').toLowerCase().includes(kw) ||
+      (t.model_description || '').toLowerCase().includes(kw)
+    );
+
+    const roomNameMap = Object.fromEntries(cache.rooms.map(r => [r.code, r.name]));
+
+    $('tsList').innerHTML = list.map(ts => {
+      const pc = pickMainPcForRoom(ts.classroom_code);
+      let pcInfo = '';
+      let adviceHTML = '';
+      if (pc) {
+        const ports = window.SMES_TSPORTS.portsOf(pc.brand, pc.model, pc.acquired_year);
+        const adv = window.SMES_TSPORTS.connectionAdvice(ports, ts);
+        pcInfo = `
+          <div class="ts-pc">
+            <span class="ts-pc-label">班級主機：</span>
+            <b>${pc.model || '(未知型號)'}</b>
+            <span class="ts-pc-year">${pc.acquired_year ? pc.acquired_year + ' 年' : ''}</span>
+            <div class="ts-port-row">${window.SMES_TSPORTS.portsBadgeHTML(ports)}</div>
+            ${ports.note ? `<div class="ts-port-note">${ports.note}</div>` : ''}
+          </div>`;
+        adviceHTML = `
+          <div class="ts-advice ts-advice-${adv.level}">
+            <div class="ts-advice-title">${adv.text}</div>
+            <div class="ts-advice-detail">${adv.detail}</div>
+          </div>`;
+      } else if (ts.classroom_code) {
+        pcInfo = `<div class="ts-pc ts-pc-none">⚠️ 找不到 ${ts.classroom_code} 的班級主機資料</div>`;
+      } else {
+        pcInfo = `<div class="ts-pc ts-pc-none">ℹ️ 未對應到教室（存放地點：${ts.location_text || '-'}）</div>`;
+      }
+
+      const urgClass = ts.urgency?.includes('★★★') ? 'danger'
+                    : ts.urgency?.includes('★★☆') ? 'accent'
+                    : ts.urgency?.includes('★☆☆') ? 'accent'
+                    : 'success';
+
+      return `
+        <div class="ts-card">
+          <div class="ts-card-head">
+            <div class="ts-card-title">
+              <b>${ts.classroom_code || '(未對應)'}</b>
+              <span class="ts-room-name">${roomNameMap[ts.classroom_code] || ts.location_text || ''}</span>
+            </div>
+            <span class="badge badge-${urgClass}">${ts.urgency || ''}</span>
+          </div>
+          <div class="ts-card-body">
+            <div class="ts-meta">
+              <span class="ts-pn">${ts.property_number || '(登帳中)'}</span>
+              <span class="ts-size">${ts.size_inch ? ts.size_inch + '吋' : ''}</span>
+              <span class="ts-brand">${ts.brand || ''}${ts.model_code ? ' · ' + ts.model_code : ''}</span>
+              <span class="ts-year">${ts.acquired_year}年 → ${ts.retire_year}年 (${ts.age_years ?? '登帳中'} 年)</span>
+            </div>
+            <div class="ts-ports">
+              <span class="ts-ports-label">觸屏輸入：</span>
+              ${ts.supports_hdmi ? '<span class="port-pill" style="background:#0a84ff;color:#fff;">HDMI</span>' : ''}
+              ${ts.supports_dp ? '<span class="port-pill" style="background:#af52de;color:#fff;">DP</span>' : ''}
+              ${ts.supports_vga ? '<span class="port-pill" style="background:#ff9500;color:#fff;">VGA</span>' : ''}
+              ${ts.dms_compatible === '相容' ? '<span class="port-pill" style="background:#34c759;color:#fff;">DMS ✓</span>' : ''}
+              ${ts.dms_compatible === '不相容' ? '<span class="port-pill" style="background:#ff3b30;color:#fff;">DMS ✗</span>' : ''}
+            </div>
+            ${pcInfo}
+            ${adviceHTML}
+          </div>
+        </div>
+      `;
+    }).join('') + (list.length === 0 ? '<div class="empty">無符合條件</div>' : '');
+  }
+
+  ['tsSearch', 'tsUrgency', 'tsBrand'].forEach(id => {
+    const el = $(id);
+    if (el) {
+      el.addEventListener('input', applyTsFilter);
+      el.addEventListener('change', applyTsFilter);
+    }
+  });
+
+  // Tab 切換時載入觸屏
+  $('tabBar').querySelectorAll('button[data-tab="touchscreen"]').forEach(b => {
+    b.addEventListener('click', () => renderTouchscreen());
+  });
+
+  // Excel 匯出
+  window.exportTouchscreensExcel = async () => {
+    const list = await loadTouchscreens();
+    if (!list.length) { toast('無資料', 'error'); return; }
+    const roomNameMap = Object.fromEntries(cache.rooms.map(r => [r.code, r.name]));
+    const rows = list.map(ts => {
+      const pc = pickMainPcForRoom(ts.classroom_code);
+      const ports = pc ? window.SMES_TSPORTS.portsOf(pc.brand, pc.model, pc.acquired_year) : null;
+      const adv = pc && ports ? window.SMES_TSPORTS.connectionAdvice(ports, ts) : null;
+      return {
+        '財產序號': ts.property_number || '(登帳中)',
+        '教室代碼': ts.classroom_code || '',
+        '教室名稱': roomNameMap[ts.classroom_code] || ts.location_text || '',
+        '廠牌': ts.brand || '',
+        'JECTOR型號': ts.model_code || '',
+        '尺寸': ts.size_inch ? ts.size_inch + '吋' : '',
+        '購置年': ts.acquired_year ? ts.acquired_year + '年' : '',
+        '到期年': ts.retire_year ? ts.retire_year + '年' : '',
+        '機齡': ts.age_years ?? '登帳中',
+        '汰換急迫性': ts.urgency || '',
+        '現值': ts.current_value || '',
+        'DMS 相容': ts.dms_compatible || '',
+        '觸屏輸入': [
+          ts.supports_hdmi ? 'HDMI' : null,
+          ts.supports_dp ? 'DP' : null,
+          ts.supports_vga ? 'VGA' : null
+        ].filter(Boolean).join('/'),
+        '班級主機': pc ? (pc.model || '') : '(無對應主機)',
+        '主機購置年': pc?.acquired_year || '',
+        '主機輸出': ports ? [
+          ports.hdmi ? 'HDMI' : null,
+          ports.dp ? 'DP' : null,
+          ports.vga ? 'VGA' : null,
+          ports.dvi ? 'DVI' : null
+        ].filter(Boolean).join('/') : '',
+        '接線建議': adv ? adv.cable : '',
+        '相容等級': adv ? ({ best: '✅最佳', ok: '🔶需轉接', warn: '⚠️僅VGA', danger: '❌不相容' })[adv.level] : '',
+        '說明': adv ? adv.detail : '',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 10 }, { wch: 10 }, { wch: 18 }, { wch: 12 }, { wch: 14 },
+      { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 22 },
+      { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 28 }, { wch: 10 },
+      { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 50 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '觸屏+接線建議');
+    XLSX.writeFile(wb, `石門觸屏_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
   // ============ Start ============
   loadAll();
 })();

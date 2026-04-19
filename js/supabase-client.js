@@ -131,6 +131,11 @@
       return rest('network_devices?select=*&order=network_segment,classroom_code&limit=1000');
     },
 
+    // 觸屏顯示器
+    async listTouchscreens() {
+      return rest('touchscreens?select=*&order=acquired_year.desc,property_number&limit=500');
+    },
+
     // Storage
     uploadPhoto,
     publicUrl,

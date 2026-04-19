@@ -1,7 +1,7 @@
 # 📍 石門盤點系統 · 產品 Roadmap
 
 > 最後更新：2026-04-18
-> 目前版本：**v7.2.7 — 手機拍攝按鈕加上來源選單（拍照/Live/相簿/檔案）**
+> 目前版本：**v7.2.8 — 觸屏管理整合（64 台 + HDMI/DP 接線建議自動辨識）**
 > 部署網址：https://cagoooo.github.io/smes-inventory/
 > **登入系統已完成實測，任何非 `@mail2.smes.tyc.edu.tw` 帳號會被自動登出**
 
@@ -25,11 +25,48 @@
 | v7.2.5 | 04-18 | 平面圖北側走廊手機橫向捲動 + 管理後台全分頁深度 RWD 優化 | 1h |
 | v7.2.6 | 04-18 | 修復手機拍照主頁：隱藏桌機專用元件 + 更新橫幅不再擋內容 | 0.5h |
 | v7.2.7 | 04-18 | 手機拍攝按鈕新增來源選單 Action Sheet (拍照/Live/相簿/檔案) + 連續模式記憶 | 0.5h |
-| **現況** | | **32 小時內打造完整學校資訊管理系統** | **~32h** |
+| v7.2.8 | 04-18 | 觸屏管理整合：64 台觸屏入庫 + PC 型號 ↔ HDMI/DP 接線建議自動辨識 | 2h |
+| **現況** | | **34 小時內打造完整學校資訊管理系統** | **~34h** |
 
 ---
 
 ## 📊 進度表（已完成）
+
+### 🖥 v7.2.8 — 觸屏管理整合 (2026-04-18)
+
+> 需求：把 86 吋觸屏（64 台）納入系統，自動辨識各班級主機與觸屏的接線相容性（HDMI / DP）。
+
+**資料層**
+- ✅ 新建 Supabase `touchscreens` table（RLS + 觸發器）
+  - 欄位：property_number / brand / model_code / size_inch / classroom_code / acquired_year / retire_year / urgency / current_value / dms_compatible / supports_hdmi / supports_dp / supports_vga
+- ✅ 從 Excel 匯入 64 筆觸屏（含 JECTOR 型號、DMS 相容性、汰換急迫性）
+- ✅ 教室名稱對應（圖書館→C301 / 幼兒園→K-BUBBLE / 電視台→C207 等 23 種命名映射）
+
+**PC 輸出埠 Port 對應表**（`js/touchscreen-ports.js`）
+- ✅ 30+ 個實際 PC 型號的 HDMI/DP/VGA/DVI 手工 map：
+  - `Lenovo ThinkCentre M800` (105年): 雙 DP + VGA（無 HDMI）
+  - `ASUS M900MDR` (113年): HDMI + 雙 DP
+  - `Acer Veriton M2640G` (106年): HDMI + VGA（無 DP）
+  - `Acer M460` (97年): VGA only（骨董）
+- ✅ 年代推估 fallback（未登錄的型號按年份推估）
+- ✅ 筆電自動辨識（含 TravelMate / VivoBook / MacBook 等模糊比對）
+
+**接線建議 6 種等級**
+| 等級 | 情境 | 建議 |
+|------|------|------|
+| ✅ 最佳 | 兩端都有 HDMI 或 DP | 直接用對應線 |
+| 🔶 需轉接（主動式）| HDMI↔DP 混搭 | 買主動式轉接器 200-1000 元 |
+| 🔶 需轉接（被動式）| DVI→HDMI | 被動線即可（無音訊） |
+| ⚠️ 僅 VGA | 類比訊號 | 畫質差、無音訊，建議汰換 |
+| ❌ 不建議 | VGA→HDMI 主動轉換 | 強烈建議汰換主機 |
+| ❌ 無法連接 | 無共通介面 | 汰換 |
+
+**管理後台新分頁 `🖥 觸屏`**
+- KPI：總數 / 立即汰換 / 今年到期 / 正常使用
+- 接線相容性總覽 Chip：最佳 X 台 / 需轉接 Y 台 / 僅 VGA Z 台…
+- 每張觸屏卡片顯示：財產序號 / 尺寸 / 年份 / DMS 相容 + 班級主機型號 + Port pills + **接線建議 + 詳細說明**
+- 篩選：搜尋 / 汰換急迫性 / 廠牌
+- Excel 匯出（含接線建議 + 詳細說明，19 欄）
 
 ### 🎯 v7.2.7 — 手機拍攝來源選單 (2026-04-18)
 

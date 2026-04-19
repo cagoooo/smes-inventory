@@ -1166,6 +1166,141 @@ label.btn-capture-inline { cursor: pointer; }
   white-space: nowrap;
 }
 
+/* =========== 觸屏顯示器（Touchscreen Tab）=========== */
+.ts-compat-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ts-compat-chip {
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+}
+.ts-compat-chip b {
+  font-size: 16px;
+  margin: 0 3px;
+}
+.ts-compat-chip.best   { background: var(--success-soft); color: #146c3a; border-color: var(--success); }
+.ts-compat-chip.ok     { background: var(--accent-soft); color: #c27300; border-color: var(--accent); }
+.ts-compat-chip.warn   { background: #fff4e0; color: #8a5800; border-color: var(--warning); }
+.ts-compat-chip.danger { background: var(--danger-soft); color: #8b2929; border-color: var(--danger); }
+.ts-compat-chip.muted  { background: var(--bg); color: var(--text-soft); border-color: var(--border); }
+
+.ts-card {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-sm);
+  border-left: 4px solid var(--primary);
+}
+.ts-card-head {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; margin-bottom: 10px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.ts-card-title {
+  display: flex; align-items: baseline; gap: 8px;
+  flex: 1; min-width: 0;
+}
+.ts-card-title b {
+  font-size: 17px; font-weight: 800; color: var(--primary); letter-spacing: -0.01em;
+}
+.ts-room-name {
+  font-size: 14px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ts-card-body {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.ts-meta {
+  display: flex; flex-wrap: wrap; gap: 8px 12px;
+  font-size: 13px; color: var(--text-soft);
+}
+.ts-meta .ts-pn {
+  font-family: monospace; font-weight: 700; color: var(--text);
+}
+.ts-meta .ts-size {
+  background: var(--primary-light); color: var(--primary);
+  padding: 1px 8px; border-radius: 5px; font-weight: 700;
+}
+.ts-meta .ts-brand { font-weight: 600; color: var(--text); }
+
+.ts-ports, .ts-port-row {
+  display: flex; gap: 6px; align-items: center;
+  flex-wrap: wrap;
+}
+.ts-ports-label {
+  font-size: 12px; color: var(--text-soft); font-weight: 600;
+}
+.port-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-family: -apple-system, sans-serif;
+}
+
+.ts-pc {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.ts-pc-label { color: var(--text-soft); font-weight: 600; }
+.ts-pc b { color: var(--text); font-weight: 700; }
+.ts-pc-year {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: 6px;
+}
+.ts-port-note {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.ts-pc-none {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.ts-advice {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  border-left: 3px solid;
+}
+.ts-advice-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.ts-advice-detail { font-size: 12px; opacity: 0.9; }
+.ts-advice-best   { background: var(--success-soft); color: #146c3a; border-left-color: var(--success); }
+.ts-advice-ok     { background: var(--accent-soft); color: #8a5800; border-left-color: var(--accent); }
+.ts-advice-warn   { background: #fff4e0; color: #8a5800; border-left-color: var(--warning); }
+.ts-advice-danger { background: var(--danger-soft); color: #8b2929; border-left-color: var(--danger); }
+
+/* 手機端優化 */
+@media (max-width: 640px) {
+  .ts-compat-summary { gap: 6px; }
+  .ts-compat-chip { padding: 6px 10px; font-size: 12px; flex: 1; min-width: 140px; }
+  .ts-compat-chip b { font-size: 14px; }
+  .ts-card { padding: 12px; }
+  .ts-card-head { margin-bottom: 8px; padding-bottom: 8px; }
+  .ts-card-title b { font-size: 15px; }
+  .ts-room-name { font-size: 13px; }
+  .ts-meta { gap: 6px 10px; font-size: 12px; }
+  .ts-pc { padding: 8px 10px; font-size: 12px; }
+  .ts-advice { padding: 8px 10px; font-size: 12px; }
+  .ts-advice-title { font-size: 13px; }
+  .ts-advice-detail { font-size: 11.5px; }
+}
+
 /* =========== Veyon 匯出 & 差異比對 =========== */
 .veyon-export-box {
   background: linear-gradient(135deg, #e5f1ff, #f0f7ff);

@@ -11,7 +11,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>石門盤點 · 管理後台</title>
-<link rel="stylesheet" href="css/style.css?v=7.2.7">
+<link rel="stylesheet" href="css/style.css?v=7.2.8">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -67,6 +67,7 @@
     <button data-tab="rooms">🏫 教室</button>
     <button data-tab="inv">📦 財產</button>
     <button data-tab="network">🌐 網路</button>
+    <button data-tab="touchscreen">🖥 觸屏</button>
     <button data-tab="qr">🏷 QR 標籤</button>
     <button data-tab="import">📥 匯入</button>
   </div>
@@ -229,6 +230,45 @@
     </div>
   </div>
 
+  <!-- Tab: 觸屏顯示器 -->
+  <div class="tab-content" id="tab-touchscreen" style="display:none;">
+    <div class="card">
+      <h2>🖥 觸屏顯示器（64 台）</h2>
+      <p style="font-size:13px;color:var(--text-soft);line-height:1.5;margin:6px 0 14px;">
+        全校 86 吋智慧觸屏配置清冊。每台觸屏都有 <b>HDMI</b> 與 <b>DisplayPort</b> 輸入孔，系統會自動辨識班級主機輸出埠並給出最佳接線建議。
+      </p>
+
+      <!-- KPI -->
+      <div class="kpi-grid" id="touchscreenKPI" style="margin-bottom:14px;"></div>
+
+      <!-- 篩選 -->
+      <div class="toolbar-row" style="margin-bottom:10px;">
+        <input id="tsSearch" type="text" class="toolbar-input toolbar-grow" placeholder="搜尋財產序號 / 教室 / 廠牌 / 型號">
+        <select id="tsUrgency" class="toolbar-select">
+          <option value="">所有急迫性</option>
+          <option value="★★★">★★★ 立即汰換</option>
+          <option value="★★☆">★★☆ 今年到期</option>
+          <option value="★☆☆">★☆☆ 明年到期</option>
+          <option value="✓">✓ 正常使用</option>
+        </select>
+        <select id="tsBrand" class="toolbar-select">
+          <option value="">所有廠牌</option>
+          <option value="JECTOR">JECTOR</option>
+          <option value="創源">創源</option>
+          <option value="創源KTA">創源KTA</option>
+          <option value="不明廠牌">不明廠牌</option>
+        </select>
+        <button class="btn btn-ghost" onclick="exportTouchscreensExcel()">📊 匯出 Excel</button>
+      </div>
+
+      <!-- 接線相容性總覽 -->
+      <div id="tsCompatSummary" style="margin-bottom:12px;"></div>
+
+      <!-- 清冊 -->
+      <div id="tsList"></div>
+    </div>
+  </div>
+
   <!-- Tab: QR 標籤 -->
   <div class="tab-content" id="tab-qr" style="display:none;">
     <div class="card">
@@ -350,23 +390,24 @@
 </div><!-- /appShell -->
 
 <script src="config.js"></script>
-<script src="js/auth.js?v=7.2.7"></script>
-<script src="js/supabase-client.js?v=7.2.7"></script>
-<script src="js/floorplan.js?v=7.2.7"></script>
-<script src="js/dashboard.js?v=7.2.7"></script>
-<script src="js/qr-labels.js?v=7.2.7"></script>
-<script src="js/monthly-report.js?v=7.2.7"></script>
-<script src="js/veyon-export.js?v=7.2.7"></script>
-<script src="js/network-tools.js?v=7.2.7"></script>
-<script src="js/error-monitor.js?v=7.2.7"></script>
-<script src="js/version-check.js?v=7.2.7"></script>
+<script src="js/auth.js?v=7.2.8"></script>
+<script src="js/supabase-client.js?v=7.2.8"></script>
+<script src="js/floorplan.js?v=7.2.8"></script>
+<script src="js/dashboard.js?v=7.2.8"></script>
+<script src="js/qr-labels.js?v=7.2.8"></script>
+<script src="js/monthly-report.js?v=7.2.8"></script>
+<script src="js/veyon-export.js?v=7.2.8"></script>
+<script src="js/network-tools.js?v=7.2.8"></script>
+<script src="js/touchscreen-ports.js?v=7.2.8"></script>
+<script src="js/error-monitor.js?v=7.2.8"></script>
+<script src="js/version-check.js?v=7.2.8"></script>
 <script>
   SMES_AUTH.initClient();
   SMES_AUTH.initSession();
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/manage.js?v=7.2.7';
+      s.src = 'js/manage.js?v=7.2.8';
       document.body.appendChild(s);
     }
   });
