@@ -592,12 +592,12 @@
       return;
     }
 
-    // 判斷候選是否在其他教室（搬家情境）
+    // 判斷候選是否在其他教室（可能是搬家 / 也可能是原登記錯誤）
     const transferred = candidates.filter(c =>
       c.classroom_code && c.classroom_code !== state.currentRoom.code
     );
     const bannerText = transferred.length > 0
-      ? `🚛 找到 ${candidates.length} 筆對應，其中 <b>${transferred.length} 筆在其他教室</b>（可能是閒置機轉移來的）`
+      ? `🚛 找到 ${candidates.length} 筆對應，其中 <b>${transferred.length} 筆登記在其他教室</b>（可能搬家或原登記有誤）`
       : `🎯 ${candidates.length} 筆可能對應，點選要比對的`;
 
     area.innerHTML = `<div class="match-banner ${transferred.length > 0 ? 'transfer' : 'good'}">
@@ -667,7 +667,7 @@
       }
     });
 
-    // 檢查教室是否變更（搬家偵測）
+    // 檢查教室是否變更（可能是搬家、也可能是原登記錯誤）
     const isTransfer = candidate.classroom_code && candidate.classroom_code !== state.currentRoom.code;
     if (isTransfer || !candidate.classroom_code) {
       const fromRoom = state.rooms?.find?.(r => r.code === candidate.classroom_code);
@@ -676,10 +676,10 @@
         : '(未設定教室)';
       changes.push({
         field: 'classroom_code',
-        label: isTransfer ? '🚛 教室轉移' : '所在教室',
+        label: isTransfer ? '🚛 教室位置' : '所在教室',
         oldVal: oldDisplay,
         newVal: state.currentRoom.code + ' ' + state.currentRoom.name,
-        transfer: isTransfer  // 標記這是搬家
+        transfer: isTransfer
       });
     }
 
@@ -692,12 +692,16 @@
       return;
     }
 
-    // 是否有搬家情境？給 panel 不同的視覺
+    // 是否有教室不符情境？給 panel 不同的視覺
     const hasTransfer = changes.some(c => c.transfer);
     const panelClass = hasTransfer ? 'inv-diff-panel is-transfer' : 'inv-diff-panel';
     const title = hasTransfer
-      ? `🚛 偵測到設備搬家：共 ${changes.length} 個欄位要更新`
+      ? `🚛 偵測到 ${changes.length} 個欄位不一致（含教室位置）`
       : `📝 發現 ${changes.length} 個欄位與清冊不同（可能主機已汰換/更換）`;
+
+    // 找出搬家情境的舊教室顯示
+    const transferChange = changes.find(c => c.transfer);
+    const oldRoomDisplay = transferChange ? transferChange.oldVal : '';
 
     diffEl.innerHTML = `
       <div class="${panelClass}">
@@ -708,7 +712,9 @@
           </label>
         </div>
         ${hasTransfer ? `<div class="inv-diff-transfer-banner">
-          這台設備原本登記在其他教室，勾選「教室轉移」後儲存，系統會把清冊上的教室改成 <b>${state.currentRoom.code} ${state.currentRoom.name}</b>。
+          <b>📍 這台設備目前清冊登記在「${oldRoomDisplay}」</b>
+          <div style="margin-top:4px;">可能原因：① 真的搬遷來此教室　② 清冊位置本來就登記錯誤　③ 當年主機壞了就近換一台沒更新紀錄。</div>
+          <div style="margin-top:4px;">確認勾選「教室位置」後儲存，清冊會更新為 <b>${state.currentRoom.code} ${state.currentRoom.name}</b>。</div>
         </div>` : ''}
         <div class="inv-diff-list">
           ${changes.map(c => `
