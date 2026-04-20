@@ -592,7 +592,73 @@
     set('f_property_number', p.property_number);
     set('f_roc_year', p.roc_year);
     set('f_serial_number', p.serial_number);
-    set('f_notes', p.notes);
+
+    // AI 老舊判斷 + notes 整合
+    const aiNotes = [];
+    if (p.notes) aiNotes.push(p.notes);
+    if (p.is_old_device === true) aiNotes.push('⚠️ AI 判斷外觀已老舊（機殼泛黃/磨損/髒污），建議納入汰換評估');
+    set('f_notes', aiNotes.join('\n'));
+
+    // 顯示 AI 信心度條
+    renderConfidenceBar(p.confidence, p);
+  }
+
+  // 🎯 使用者按「我要修正財產編號」時，聚焦到該欄位讓鍵盤彈出
+  window.focusPropertyNumber = () => {
+    const input = $('f_property_number').querySelector('input');
+    if (input) {
+      input.focus();
+      input.select();
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  // 🎯 AI 辨識信心度視覺化
+  function renderConfidenceBar(confidence, parsed) {
+    let bar = $('confidenceBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'confidenceBar';
+      bar.className = 'confidence-bar';
+      const detectArea = $('detectArea');
+      if (detectArea) detectArea.insertBefore(bar, detectArea.firstChild);
+    }
+    if (confidence == null) {
+      bar.style.display = 'none';
+      return;
+    }
+    bar.style.display = 'flex';
+    const pct = Math.round(confidence * 100);
+    let level, msg, icon;
+    if (confidence >= 0.85) {
+      level = 'high'; icon = '✅';
+      msg = 'AI 辨識信心度高，可以直接儲存';
+    } else if (confidence >= 0.65) {
+      level = 'mid'; icon = '🟡';
+      msg = '信心度中等，建議檢查欄位後儲存';
+    } else {
+      level = 'low'; icon = '⚠️';
+      msg = '信心度偏低，強烈建議重拍（光線 / 對焦 / 角度）';
+    }
+    // 列出哪些欄位 AI 沒認出來（null 或空）
+    const missing = [];
+    if (!parsed.brand) missing.push('廠牌');
+    if (!parsed.model) missing.push('型號');
+    if (!parsed.property_number) missing.push('財產號');
+    if (!parsed.roc_year) missing.push('年份');
+
+    bar.className = `confidence-bar conf-${level}`;
+    bar.innerHTML = `
+      <div class="conf-main">
+        <div class="conf-header">
+          <span class="conf-icon">${icon}</span>
+          <span class="conf-label">AI 辨識信心度</span>
+          <span class="conf-pct">${pct}%</span>
+        </div>
+        <div class="conf-track"><div class="conf-fill" style="width:${pct}%"></div></div>
+        <div class="conf-msg">${msg}${missing.length > 0 ? ` · 未讀到：${missing.join(' / ')}` : ''}</div>
+      </div>
+    `;
   }
 
   // 儲存候選清單（供選中後重新查 diff 用）
@@ -602,31 +668,86 @@
     const area = $('matchArea');
     area.innerHTML = '';
     let candidates = [];
+    let matchMethod = '';  // 'exact' / 'fuzzy_ocr' / 'fuzzy_all' / 'model' / ''
+    let pnNoMatch = false;  // AI 有辨識到 PN 但找不到任何對應
+
     if (p.property_number) {
+      const pn = p.property_number.trim();
+      // Step 1: 精確比對
       try {
-        const rs = await window.SMES_DB.searchInventory(p.property_number);
-        candidates = rs.slice(0, 3);
-      } catch (e) {}
+        const rs = await window.SMES_DB.findInventoryByExactPN(pn);
+        if (rs.length > 0) {
+          candidates = rs.slice(0, 3);
+          matchMethod = 'exact';
+        }
+      } catch (e) { console.warn('[exact match]', e); }
+
+      // Step 2: OCR 混淆字元 fuzzy（1↔7、0↔O、B↔8 等）
+      if (candidates.length === 0) {
+        try {
+          const rs = await window.SMES_DB.findInventoryByFuzzyPN(pn);
+          if (rs.length > 0) {
+            candidates = rs.slice(0, 3);
+            matchMethod = 'fuzzy_ocr';
+          }
+        } catch (e) { console.warn('[fuzzy-ocr match]', e); }
+      }
+
+      // Step 3: 傳統全欄 fuzzy（最後備援）
+      if (candidates.length === 0) {
+        try {
+          const rs = await window.SMES_DB.searchInventory(pn);
+          if (rs.length > 0) {
+            candidates = rs.slice(0, 3);
+            matchMethod = 'fuzzy_all';
+          }
+        } catch (e) {}
+      }
+
+      if (candidates.length === 0) pnNoMatch = true;
     }
+
+    // Step 4: 若無 PN 或 PN 找不到，用 model 搜
     if (candidates.length === 0 && p.model) {
       try {
         const rs = await window.SMES_DB.searchInventory(p.model);
         candidates = rs.slice(0, 3);
+        if (candidates.length > 0) matchMethod = 'model';
       } catch (e) {}
     }
+
     lastCandidates = candidates;
+    state.lastMatchMethod = matchMethod;
+    state.lastPNNoMatch = pnNoMatch;
 
     if (candidates.length === 0) {
-      // 沒有對應，若 AI 有辨識到財產號 → 提供「新增為新財產」按鈕
+      // 沒有對應，若 AI 有辨識到財產號 → 提供「新增」+ 警告可能辨識錯誤
       const hasPN = !!p.property_number;
-      area.innerHTML = `<div class="match-banner none">
-        🔍 <span class="count">找不到對應的既有財產 — 可能是新購、汰換、或尚未匯入</span>
-      </div>
-      ${hasPN ? `
-      <button type="button" class="btn btn-primary btn-block" onclick="createInventoryFromDetection()" style="margin-top:8px;">
-        ➕ 新增為新財產（#${p.property_number}）
-      </button>` : ''}
-      `;
+      if (hasPN) {
+        area.innerHTML = `<div class="match-banner warn">
+          ⚠️ <span class="count">AI 認出 <b>#${p.property_number}</b>，但清冊中找不到這筆</span>
+        </div>
+        <div class="ocr-warn-box">
+          <div class="ocr-warn-title">🤔 可能原因（由可能性高到低）：</div>
+          <ol class="ocr-warn-list">
+            <li><b>AI 辨識錯誤</b> — 財產號常見混淆：<code>1↔7 / 0↔O / B↔8 / 5↔S / 2↔Z</code>。請檢查上方「財產編號」欄位是否正確，必要時手動修正</li>
+            <li><b>新購機</b>尚未登錄 → 按下方「➕ 新增」按鈕</li>
+            <li><b>舊清冊未匯入</b>（例：今年剛接手管理）</li>
+          </ol>
+          <div class="ocr-warn-actions">
+            <button type="button" class="btn btn-ghost" onclick="focusPropertyNumber()">
+              ✏️ 我要修正財產編號
+            </button>
+            <button type="button" class="btn btn-primary" onclick="createInventoryFromDetection()">
+              ➕ 確認是新財產（#${p.property_number}）
+            </button>
+          </div>
+        </div>`;
+      } else {
+        area.innerHTML = `<div class="match-banner none">
+          🔍 <span class="count">找不到對應的既有財產 — AI 未讀到財產號，請手動填寫或按「新增為新財產」</span>
+        </div>`;
+      }
       return;
     }
 
@@ -638,9 +759,21 @@
       ? `🚛 找到 ${candidates.length} 筆對應，其中 <b>${transferred.length} 筆登記在其他教室</b>（可能搬家或原登記有誤）`
       : `🎯 ${candidates.length} 筆可能對應，點選要比對的`;
 
+    // 若是靠 OCR 混淆才找到 → 額外提示
+    const fuzzyHint = matchMethod === 'fuzzy_ocr'
+      ? `<div class="ocr-fuzzy-hint">
+          🔤 <b>注意</b>：AI 讀到 <code>#${p.property_number}</code> 但清冊沒有這筆。
+          系統用 <b>OCR 常見混淆字元</b>（1↔7 / 0↔O / B↔8 等）找到相近的 ${candidates.length} 筆，<b>請仔細確認編號後再選</b>。
+        </div>`
+      : matchMethod === 'fuzzy_all'
+      ? `<div class="ocr-fuzzy-hint ocr-fuzzy-weak">
+          🔎 未精確比對到，系統用模糊搜尋找到這些可能相關的，僅供參考。
+        </div>`
+      : '';
+
     area.innerHTML = `<div class="match-banner ${transferred.length > 0 ? 'transfer' : 'good'}">
       <span class="count">${bannerText}</span>
-    </div>` + candidates.map(c => {
+    </div>` + fuzzyHint + candidates.map(c => {
       const isTransfer = c.classroom_code && c.classroom_code !== state.currentRoom.code;
       const roomInfo = state.rooms?.find?.(r => r.code === c.classroom_code);
       const fromWhere = c.classroom_code
