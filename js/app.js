@@ -472,13 +472,33 @@
     if (fs) fs.style.display = 'none';
   };
 
-  // 從詳情頁刪除
+  // 從詳情頁刪除（顯示完整影響說明）
   window.deletePhotoFromDetail = async (id, path) => {
-    if (!confirm('確認刪除這筆紀錄？\n（實體照片也會從雲端刪除）')) return;
+    const photos = state.roomPhotos || [];
+    const p = photos.find(x => x.id === id);
+    const hasMatch = p && p.matched_inventory_id;
+
+    const msg = `【確認刪除這筆拍照紀錄？】
+
+🔴 會刪除：
+　• 這張照片檔 (Supabase Storage)
+　• photo_records 這筆紀錄
+　• AI 辨識原始資料 (gemini_raw)
+
+🟢 不會動到：
+　• 財產清冊 (inventory_items) — 廠牌/型號/教室仍保留
+　• 異動歷史 (audit log) — 誰何時改了什麼仍保留
+${hasMatch ? `
+💡 備註：這張照片之前對應到清冊 #${p.detected_property_number || p.matched_inventory_id}，
+　 刪除後「清冊資料」仍在，只是少了這張拍照佐證。` : ''}
+
+⚠️ 此動作無法復原。確定要刪嗎？`;
+
+    if (!confirm(msg)) return;
     try {
       await window.SMES_DB.deletePhoto(id);
       if (path) window.SMES_DB.deletePhotoFile(path);
-      toast('已刪除', 'success');
+      toast('✅ 已刪除（清冊與歷史紀錄不受影響）', 'success');
       vibrate(15);
       closePhotoDetail();
       loadRoomRecords();
@@ -539,11 +559,17 @@
   };
 
   window.deletePhoto = async (id, path) => {
-    if (!confirm('確認刪除？')) return;
+    const msg = `確認刪除這筆拍照紀錄？
+
+🔴 會刪：照片檔 + 拍照紀錄 + AI 辨識原始資料
+🟢 不動：財產清冊 + 異動歷史（都保留）
+
+此動作無法復原。`;
+    if (!confirm(msg)) return;
     try {
       await window.SMES_DB.deletePhoto(id);
       if (path) window.SMES_DB.deletePhotoFile(path);
-      toast('已刪除', 'success');
+      toast('✅ 已刪除（清冊不受影響）', 'success');
       vibrate(15);
       loadRoomRecords();
     } catch (e) {

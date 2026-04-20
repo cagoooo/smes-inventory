@@ -1,5 +1,5 @@
 {
-  "version": "v7.3.6",
-  "build": "2026-04-18r",
-  "notes": "修復 AI 辨識 401 錯誤：改用使用者 access_token (非 publishable key)"
+  "version": "v7.3.7",
+  "build": "2026-04-18s",
+  "notes": "刪除照片確認訊息增強：清楚說明會刪什麼、不會動什麼"
 }
