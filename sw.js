@@ -3,7 +3,7 @@
 //   - 靜態資源 (HTML/CSS/JS/icon/CDN)：cache-first
 //   - Supabase REST/Storage API：network-first，失敗則讀 cache
 //   - 照片 URL (Supabase Storage CDN)：stale-while-revalidate
-const CACHE_VERSION = 'smes-v7.3.3-2026-04-18o';
+const CACHE_VERSION = 'smes-v7.3.4-2026-04-18p';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const DATA_CACHE = `data-${CACHE_VERSION}`;
 const PHOTO_CACHE = `photo-${CACHE_VERSION}`;

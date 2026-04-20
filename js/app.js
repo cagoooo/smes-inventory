@@ -394,12 +394,14 @@
     $('previewPanel').style.display = 'block';
     $('detectArea').style.display = 'none';
     $('recognizeLoading').style.display = 'flex';
+    $('aiSummaryOverlay').style.display = 'none';  // 重新辨識前先隱藏舊摘要
     $('matchArea').innerHTML = '';
     vibrate([15, 10, 15]);
 
-    // 自動啟動辨識
+    // 自動啟動辨識（傳入 hint_type 讓 AI 針對不同類型優化）
     try {
-      const { parsed, raw, compressed } = await window.SMES_GEMINI.recognize(f);
+      const hintType = state.captureHint || 'auto';  // 'auto' / 'label' / 'device'
+      const { parsed, raw, compressed } = await window.SMES_GEMINI.recognize(f, hintType);
       state.currentFile = compressed;
       state.lastDetection = { parsed, raw };
 
@@ -409,6 +411,7 @@
       }
 
       fillDetectFields(parsed);
+      renderAISummary(parsed);  // 在照片底部顯示摘要
       await showMatchSuggestions(parsed);
 
       // QR 預填了 matched_inventory_id 的話直接選上該建議並觸發 diff
@@ -450,6 +453,18 @@
   window.handlePhotoFile = handlePhotoFile;
 
   // ============ 手機端：拍攝功能選單（Action Sheet）============
+  // 還原上次使用的辨識重點
+  state.captureHint = localStorage.getItem('smes_capture_hint') || 'auto';
+
+  window.setCaptureHint = (hint) => {
+    state.captureHint = hint;
+    try { localStorage.setItem('smes_capture_hint', hint); } catch {}
+    document.querySelectorAll('.hint-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.hint === hint);
+    });
+    try { navigator.vibrate && navigator.vibrate(5); } catch {}
+  };
+
   window.openCaptureMenu = () => {
     if (!state.currentRoom) {
       toast('請先選擇教室', 'error');
@@ -460,6 +475,10 @@
     const sheet = $('captureSheet');
     if (backdrop) backdrop.classList.add('show');
     if (sheet) sheet.classList.add('show');
+    // 同步按鈕 active 狀態（以免 sheet 開啟時跟記憶不一致）
+    document.querySelectorAll('.hint-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.hint === state.captureHint);
+    });
     try { navigator.vibrate && navigator.vibrate(10); } catch {}
   };
 
@@ -575,6 +594,7 @@
   window.cancelPreview = () => {
     if (!confirm('放棄這張照片？')) return;
     $('previewPanel').style.display = 'none';
+    $('aiSummaryOverlay').style.display = 'none';
     ['photoInput', 'photoInputDesktop', 'photoInputLibrary', 'photoInputAny']
       .forEach(id => { const el = $(id); if (el) el.value = ''; });
     state.currentFile = null;
@@ -584,7 +604,11 @@
     const set = (id, val) => {
       const ctl = $(id).querySelector('input,select,textarea');
       ctl.value = val ?? '';
+      // 清除 user-edited（上一張照片可能留下的） + 設定 auto-detected
+      $(id).classList.remove('user-edited');
       $(id).classList.toggle('auto-detected', val != null && val !== '');
+      // 記住 AI 填入的原值（若使用者改了可以知道差異）
+      ctl.dataset.aiValue = (val == null ? '' : String(val));
     };
     set('f_photo_type', p.photo_type || '主機');
     set('f_brand', p.brand);
@@ -602,6 +626,47 @@
     // 顯示 AI 信心度條
     renderConfidenceBar(p.confidence, p);
   }
+
+  // 🎯 #7: 在照片底部顯示 AI 辨識摘要（不用滑到表單就看到關鍵資訊）
+  function renderAISummary(p) {
+    const overlay = $('aiSummaryOverlay');
+    const line1 = $('aiSummaryLine1');
+    const line2 = $('aiSummaryLine2');
+    if (!overlay || !line1 || !line2) return;
+
+    // 第一行：主要資訊（型號 · 財產號）
+    const mainParts = [];
+    if (p.brand || p.model) {
+      mainParts.push(`${p.brand || ''} ${p.model || ''}`.trim());
+    }
+    if (p.property_number) {
+      mainParts.push(`#${p.property_number}`);
+    }
+
+    // 第二行：次要資訊（年份 · 類型 · 信心度）
+    const subParts = [];
+    if (p.roc_year) subParts.push(`${p.roc_year} 年`);
+    if (p.photo_type) subParts.push(p.photo_type);
+    if (p.is_old_device === true) subParts.push('⚠️ 外觀老舊');
+    if (typeof p.confidence === 'number') {
+      const pct = Math.round(p.confidence * 100);
+      const emoji = pct >= 85 ? '✅' : pct >= 65 ? '🟡' : '⚠️';
+      subParts.push(`${emoji} ${pct}%`);
+    }
+
+    if (mainParts.length === 0 && subParts.length === 0) {
+      overlay.style.display = 'none';
+      return;
+    }
+
+    // 依信心度給 overlay 不同顏色
+    const conf = p.confidence || 0;
+    overlay.className = 'ai-summary-overlay ' + (conf >= 0.85 ? 'sum-high' : conf >= 0.65 ? 'sum-mid' : 'sum-low');
+    line1.textContent = mainParts.join(' · ') || '（AI 未認出主要欄位）';
+    line2.textContent = subParts.join(' · ');
+    overlay.style.display = 'block';
+  }
+  window._renderAISummary = renderAISummary;  // debug
 
   // 🎯 使用者按「我要修正財產編號」時，聚焦到該欄位讓鍵盤彈出
   window.focusPropertyNumber = () => {
@@ -918,6 +983,27 @@
   document.addEventListener('input', (e) => {
     const t = e.target;
     if (!t || !t.closest) return;
+
+    // 🎯 #6: 檢查是否為表單欄位（包括 select 的 change 由 change event 處理）
+    const field = t.closest('#detectArea .field');
+    if (field) {
+      const ctl = field.querySelector('input,select,textarea');
+      if (ctl) {
+        const aiVal = ctl.dataset.aiValue || '';
+        const curVal = (ctl.value || '').trim();
+        // 使用者改成跟 AI 原值不同 → 標記為 user-edited
+        if (aiVal !== curVal) {
+          field.classList.remove('auto-detected');
+          field.classList.add('user-edited');
+        } else {
+          // 改回跟 AI 一樣 → 還原 auto-detected
+          field.classList.remove('user-edited');
+          if (aiVal !== '') field.classList.add('auto-detected');
+        }
+      }
+    }
+
+    // diff 重算
     if (!t.closest('#f_brand, #f_model, #f_roc_year, #f_serial_number')) return;
     clearTimeout(_diffRerenderTimer);
     _diffRerenderTimer = setTimeout(() => {
@@ -927,6 +1013,23 @@
       const cand = lastCandidates.find(c => c.id === id);
       if (cand) renderInventoryDiff(cand);
     }, 300);
+  });
+
+  // select 的 change event
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t || t.tagName !== 'SELECT') return;
+    const field = t.closest('#detectArea .field');
+    if (!field) return;
+    const aiVal = t.dataset.aiValue || '';
+    const curVal = (t.value || '').trim();
+    if (aiVal !== curVal) {
+      field.classList.remove('auto-detected');
+      field.classList.add('user-edited');
+    } else {
+      field.classList.remove('user-edited');
+      if (aiVal !== '') field.classList.add('auto-detected');
+    }
   });
 
   // ========== 新增為新財產（AI 辨識到財產號但沒對應到清冊）==========

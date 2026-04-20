@@ -1,7 +1,7 @@
 # 📍 石門盤點系統 · 產品 Roadmap
 
 > 最後更新：2026-04-18
-> 目前版本：**v7.3.3 — AI 辨識精準度大升級（精確比對 + 信心度 + OCR 糾錯）**
+> 目前版本：**v7.3.4 — AI 辨識三部曲（分類 prompt + 編輯標記 + 照片內摘要）**
 > 部署網址：https://cagoooo.github.io/smes-inventory/
 > **登入系統已完成實測，任何非 `@mail2.smes.tyc.edu.tw` 帳號會被自動登出**
 
@@ -31,7 +31,8 @@
 | v7.3.1 | 04-18 | 教室位置不符文案中立化（搬家 / 登記錯誤 / 就近替換） | 0.25h |
 | v7.3.2 | 04-18 | **盤點三件套**：異動歷史表 + 月報表 PDF + 本月進度地圖 toggle | 4h |
 | v7.3.3 | 04-18 | AI 辨識精準度升級：精確比對 / 信心度可視化 / OCR 混淆字元提示 | 1.5h |
-| **現況** | | **41.25 小時內打造完整學校資訊管理系統** | **~41.25h** |
+| v7.3.4 | 04-18 | AI 辨識三部曲：分類 prompt (hint_type) + 編輯標記 + 照片內摘要 overlay | 2h |
+| **現況** | | **43.25 小時內打造完整學校資訊管理系統** | **~43.25h** |
 
 ---
 
@@ -107,6 +108,34 @@
 ---
 
 ## 📊 進度表（已完成）
+
+### 🎭 v7.3.4 — AI 辨識三部曲：分類 prompt + 編輯標記 + 照片摘要 (2026-04-18)
+
+> 把 v7.3.3 審計報告中剩下的 3 個中優先級問題一次做完。
+
+**#5 分類 Prompt（根據 hint_type 切換重點）**
+- ✅ Edge Function 升級到 v7，接受 `hint_type: 'auto' | 'label' | 'device'` 參數
+- ✅ 3 種 prompt 分支：
+  - `auto`：通用 prompt + AI 自己判斷類型
+  - `label`（拍財產標籤）：**95% 心力** 放在 property_number / roc_year
+  - `device`（拍主機/螢幕）：**90% 心力** 放在 brand / model / serial_number
+- ✅ 加強提示「取得日期才是正確年份，列印/盤點日期不是」「Windows Product Key 不是 S/N」
+- ✅ 拍照選單頂部新增 3 按鈕 segmented control（🤖 自動 / 💻 拍主機 / 🏷 拍標籤）
+- ✅ 記憶偏好（localStorage.smes_capture_hint）
+
+**#6 欄位編輯標記：AI 填的 vs 使用者改的**
+- ✅ `fillDetectFields` 記錄 AI 原值到 `dataset.aiValue`
+- ✅ input/change event 比對 current vs aiValue：
+  - 不同 → `.field.user-edited`（藍底 + 「✏️ 已修改」標籤）
+  - 改回一樣 → 恢復 `.auto-detected`（綠底 + 「✨ AI」標籤）
+- ✅ 新拍照時清除所有 `.user-edited`
+
+**#7 照片內 AI 摘要 overlay**
+- ✅ `.preview-img-wrap` 底部加半透明漸層 overlay
+- ✅ 第一行：`ASUS M900MDR · #000551`（型號 + 財產號）
+- ✅ 第二行：`113 年 · 主機 · ✅ 92%`（年份 + 類型 + 信心度）
+- ✅ 依信心度切換邊條顏色（綠/橘/紅）
+- ✅ 低信心時整個 overlay 變紅底警示
 
 ### 🔬 v7.3.3 — AI 辨識流程審計 + 精準度升級 (2026-04-18)
 

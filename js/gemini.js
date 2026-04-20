@@ -28,7 +28,8 @@
   }
 
   // ============ 透過 Edge Function 呼叫 Gemini ============
-  async function recognizeViaProxy(file) {
+  // hintType: 'auto' | 'label' | 'device'  → 影響 prompt 分支，優化辨識重點
+  async function recognizeViaProxy(file, hintType = 'auto') {
     const C = window.SMES_CONFIG;
     const compressed = await compressImage(file);
     const b64 = await fileToBase64(compressed);
@@ -38,11 +39,14 @@
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        // Supabase Edge Function (verify_jwt=true) 需要 apikey + Authorization
         apikey: C.SUPABASE_ANON_KEY,
         Authorization: `Bearer ${C.SUPABASE_ANON_KEY}`
       },
-      body: JSON.stringify({ image_base64: b64, mime_type: 'image/jpeg' })
+      body: JSON.stringify({
+        image_base64: b64,
+        mime_type: 'image/jpeg',
+        hint_type: hintType
+      })
     });
 
     if (!res.ok) {
@@ -95,14 +99,13 @@
     return { parsed, raw: json, compressed };
   }
 
-  async function recognize(file) {
+  async function recognize(file, hintType = 'auto') {
     try {
-      return await recognizeViaProxy(file);
+      return await recognizeViaProxy(file, hintType);
     } catch (e) {
       console.warn('[gemini-proxy] 失敗，嘗試本機 Key 備援:', e.message);
-      // 如果 proxy 失敗且本機有 key，退回直連模式
       if (localStorage.getItem(KEY_STORAGE) || window.SMES_CONFIG.GEMINI_API_KEY) {
-        return await recognizeDirect(file);
+        return await recognizeDirect(file);  // direct 模式仍用通用 prompt
       }
       throw e;
     }
