@@ -1,5 +1,5 @@
 {
-  "version": "v7.3.5",
-  "build": "2026-04-18q",
-  "notes": "本教室紀錄可點擊：照片詳情 + AI 原值 + 清冊對應 + 異動歷史"
+  "version": "v7.3.6",
+  "build": "2026-04-18r",
+  "notes": "修復 AI 辨識 401 錯誤：改用使用者 access_token (非 publishable key)"
 }

@@ -34,13 +34,17 @@
     const compressed = await compressImage(file);
     const b64 = await fileToBase64(compressed);
 
+    // 🔐 優先用已登入使用者的 access_token，沒登入才退回 anon key
+    // Edge Function verify_jwt=true 時必須是合法的使用者 JWT
+    const userToken = window.SMES_AUTH?.getAccessToken?.();
+
     const url = `${C.SUPABASE_URL}/functions/v1/gemini-proxy`;
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         apikey: C.SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${C.SUPABASE_ANON_KEY}`
+        Authorization: `Bearer ${userToken || C.SUPABASE_ANON_KEY}`
       },
       body: JSON.stringify({
         image_base64: b64,
@@ -51,7 +55,15 @@
 
     if (!res.ok) {
       const err = await res.text().catch(() => '');
-      throw new Error(`代理伺服器錯誤 ${res.status}: ${err.slice(0, 300)}`);
+      // 401 = 通常是 session 過期或未登入，給使用者清楚的指示
+      if (res.status === 401) {
+        throw new Error('登入已過期，請重新整理頁面並重新登入 Google 帳號');
+      }
+      // 429 = rate limit
+      if (res.status === 429) {
+        throw new Error('辨識太頻繁，請稍候 1 分鐘再試');
+      }
+      throw new Error(`代理伺服器錯誤 ${res.status}: ${err.slice(0, 200)}`);
     }
 
     const data = await res.json();
