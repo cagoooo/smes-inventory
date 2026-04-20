@@ -12,7 +12,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>石門盤點</title>
-<link rel="stylesheet" href="css/style.css?v=7.3.4">
+<link rel="stylesheet" href="css/style.css?v=7.3.5">
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -344,6 +344,25 @@
   </div>
 </div>
 
+<!-- 📷 照片詳情 Modal -->
+<div class="sheet-backdrop" id="photoDetailBackdrop" onclick="closePhotoDetail()"></div>
+<div class="sheet photo-detail-sheet" id="photoDetailModal">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <h3>📋 照片詳情</h3>
+    <button class="sheet-close" onclick="closePhotoDetail()">✕</button>
+  </div>
+  <div class="sheet-body">
+    <div id="photoDetailBody"></div>
+  </div>
+</div>
+
+<!-- 🖼 照片全螢幕檢視 -->
+<div class="photo-fullscreen" id="photoFullscreen" onclick="closePhotoFullscreen()" style="display:none;">
+  <img id="photoFullscreenImg" alt="">
+  <button class="photo-fullscreen-close">✕</button>
+</div>
+
 <!-- QR Code 掃描 Modal -->
 <div class="sheet-backdrop" id="qrBackdrop" onclick="closeQRScanner()"></div>
 <div class="sheet" id="qrSheet">
@@ -421,15 +440,15 @@
 
 </div><!-- /appShell -->
 
-<script src="config.js?v=7.3.4"></script>
-<script src="js/auth.js?v=7.3.4"></script>
-<script src="js/supabase-client.js?v=7.3.4"></script>
-<script src="js/offline.js?v=7.3.4"></script>
-<script src="js/camera.js?v=7.3.4"></script>
-<script src="js/gemini.js?v=7.3.4"></script>
-<script src="js/floorplan.js?v=7.3.4"></script>
-<script src="js/error-monitor.js?v=7.3.4"></script>
-<script src="js/version-check.js?v=7.3.4"></script>
+<script src="config.js?v=7.3.5"></script>
+<script src="js/auth.js?v=7.3.5"></script>
+<script src="js/supabase-client.js?v=7.3.5"></script>
+<script src="js/offline.js?v=7.3.5"></script>
+<script src="js/camera.js?v=7.3.5"></script>
+<script src="js/gemini.js?v=7.3.5"></script>
+<script src="js/floorplan.js?v=7.3.5"></script>
+<script src="js/error-monitor.js?v=7.3.5"></script>
+<script src="js/version-check.js?v=7.3.5"></script>
 <script>
   // 註冊 Service Worker（Cache-first + 背景同步）
   if ('serviceWorker' in navigator) {
@@ -447,7 +466,7 @@
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/app.js?v=7.3.4';
+      s.src = 'js/app.js?v=7.3.5';
       document.body.appendChild(s);
     }
   });

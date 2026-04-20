@@ -247,8 +247,11 @@
         return;
       }
 
+      // 快取最新的照片清單，供詳情 modal 使用
+      state.roomPhotos = photos;
+
       $('roomRecords').innerHTML = photos.map(p => `
-        <div class="record-item">
+        <div class="record-item record-clickable" onclick="openPhotoDetail(${p.id})">
           ${p.photo_url ? `<img src="${p.photo_url}" loading="lazy" onerror="this.style.display='none'">` : '<div style="width:54px;height:54px;background:var(--bg);border-radius:8px;"></div>'}
           <div class="info">
             <div class="model">${p.detected_brand || ''} ${p.detected_model || '(未填型號)'}</div>
@@ -259,7 +262,8 @@
               ${p.matched_inventory_id ? '<span class="tag" style="background:var(--success-soft);color:var(--success);">✓ 已比對</span>' : ''}
             </div>
           </div>
-          <button class="del" onclick="deletePhoto(${p.id}, '${p.photo_path || ''}')">🗑</button>
+          <span class="record-chev">›</span>
+          <button class="del" onclick="event.stopPropagation(); deletePhoto(${p.id}, '${p.photo_path || ''}')">🗑</button>
         </div>
       `).join('');
     } catch (e) {
@@ -267,6 +271,272 @@
       $('roomRecords').innerHTML = `<div class="empty">載入失敗: ${e.message}</div>`;
     }
   }
+
+  // ========== 📋 照片詳情 Modal ==========
+  window.openPhotoDetail = async (id) => {
+    state._lastPhotoDetailId = id;
+    const photos = state.roomPhotos || [];
+    const p = photos.find(x => x.id === id);
+    if (!p) { toast('找不到該紀錄', 'error'); return; }
+
+    const modal = $('photoDetailModal');
+    const backdrop = $('photoDetailBackdrop');
+    const body = $('photoDetailBody');
+    if (!modal || !body) return;
+
+    // 先顯示 loading
+    body.innerHTML = '<div class="empty"><div class="loading-lg"></div></div>';
+    modal.classList.add('show');
+    if (backdrop) backdrop.classList.add('show');
+
+    // 組裝詳情內容
+    const conf = typeof p.confidence === 'number' ? p.confidence : null;
+    const confPct = conf != null ? Math.round(conf * 100) : null;
+    const confEmoji = confPct == null ? '' : confPct >= 85 ? '🟢' : confPct >= 65 ? '🟡' : '🔴';
+    const confLevel = confPct == null ? '' : confPct >= 85 ? 'high' : confPct >= 65 ? 'mid' : 'low';
+
+    const createdAt = p.created_at
+      ? new Date(p.created_at).toLocaleString('zh-TW', {
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', hour12: false
+        })
+      : '-';
+
+    // 取得對應教室名稱
+    const roomName = state.rooms?.find(r => r.code === p.classroom_code)?.name || '';
+
+    // 若有連結清冊 → 查 inventory_items 額外資訊
+    let inventoryInfoHTML = '';
+    if (p.matched_inventory_id) {
+      try {
+        const invRows = await fetch(
+          `${window.SMES_CONFIG.SUPABASE_URL}/rest/v1/inventory_items?id=eq.${p.matched_inventory_id}&select=*`,
+          {
+            headers: {
+              apikey: window.SMES_CONFIG.SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${window.SMES_AUTH?.getAccessToken?.() || window.SMES_CONFIG.SUPABASE_ANON_KEY}`
+            }
+          }
+        ).then(r => r.json());
+        const inv = invRows[0];
+        if (inv) {
+          const invRoom = state.rooms?.find(r => r.code === inv.classroom_code);
+          inventoryInfoHTML = `
+            <div class="pd-section pd-section-matched">
+              <div class="pd-section-title">🔗 已連結到財產清冊</div>
+              <div class="pd-kv">
+                <div class="pd-k">財產編號</div>
+                <div class="pd-v"><code>${inv.property_number || '-'}</code></div>
+              </div>
+              <div class="pd-kv">
+                <div class="pd-k">清冊型號</div>
+                <div class="pd-v">${inv.brand || ''} ${inv.model || inv.item_name || '-'}</div>
+              </div>
+              <div class="pd-kv">
+                <div class="pd-k">清冊教室</div>
+                <div class="pd-v">${inv.classroom_code || '-'}${invRoom ? ' ' + invRoom.name : ''}
+                  ${inv.classroom_code !== p.classroom_code ? ' <span class="pd-warn">⚠️ 與拍攝地點不同</span>' : ''}
+                </div>
+              </div>
+              <div class="pd-kv">
+                <div class="pd-k">清冊取得年</div>
+                <div class="pd-v">${inv.acquired_year ? inv.acquired_year + ' 年' : '-'}</div>
+              </div>
+              <div class="pd-kv">
+                <div class="pd-k">清冊 S/N</div>
+                <div class="pd-v" style="font-family:monospace;">${inv.serial_number || '-'}</div>
+              </div>
+              ${inv.location_text && inv.location_text !== inv.classroom_code ? `
+              <div class="pd-kv">
+                <div class="pd-k">放置位置</div>
+                <div class="pd-v">${inv.location_text}</div>
+              </div>` : ''}
+              <div class="pd-match-method" style="margin-top:8px;font-size:11px;color:var(--text-muted);">
+                比對方式：${({
+                  exact: '✓ 財產號精確比對',
+                  fuzzy_ocr: '🔤 OCR 混淆字元比對',
+                  fuzzy_all: '🔎 模糊比對',
+                  model: '💻 依型號比對',
+                  manual: '✋ 使用者手動選擇'
+                })[p.match_method] || p.match_method || '-'}
+              </div>
+            </div>`;
+        }
+      } catch (e) {
+        console.warn('[photo-detail] 清冊查詢失敗:', e);
+      }
+    } else {
+      inventoryInfoHTML = `
+        <div class="pd-section pd-section-nomatch">
+          <div class="pd-section-title">🔍 未連結清冊</div>
+          <div class="pd-nomatch-desc">這張照片沒有對應到任何財產清冊紀錄。可能是新購機、拍了標籤但沒關聯，或純資料蒐集。</div>
+        </div>`;
+    }
+
+    body.innerHTML = `
+      <!-- 📷 照片 -->
+      ${p.photo_url ? `
+        <div class="pd-photo-wrap" onclick="openPhotoFullscreen('${p.photo_url}')">
+          <img src="${p.photo_url}" alt="照片" class="pd-photo" />
+          <div class="pd-photo-zoom-hint">🔍 點擊放大</div>
+        </div>` : '<div class="empty"><div class="icon">📭</div>無照片</div>'}
+
+      <!-- 🎯 AI 辨識結果 -->
+      <div class="pd-section">
+        <div class="pd-section-title">🤖 AI 辨識結果</div>
+        <div class="pd-kv">
+          <div class="pd-k">類型</div>
+          <div class="pd-v">${p.photo_type || '-'}</div>
+        </div>
+        <div class="pd-kv">
+          <div class="pd-k">廠牌</div>
+          <div class="pd-v">${p.detected_brand || '<span class="pd-null">—</span>'}</div>
+        </div>
+        <div class="pd-kv">
+          <div class="pd-k">型號</div>
+          <div class="pd-v">${p.detected_model || '<span class="pd-null">—</span>'}</div>
+        </div>
+        <div class="pd-kv">
+          <div class="pd-k">財產號</div>
+          <div class="pd-v"><code>${p.detected_property_number || '-'}</code></div>
+        </div>
+        <div class="pd-kv">
+          <div class="pd-k">民國年</div>
+          <div class="pd-v">${p.detected_year ? p.detected_year + ' 年 ' + yearBadge(p.detected_year) : '<span class="pd-null">—</span>'}</div>
+        </div>
+        <div class="pd-kv">
+          <div class="pd-k">序號 S/N</div>
+          <div class="pd-v" style="font-family:monospace;">${p.detected_serial || '<span class="pd-null">—</span>'}</div>
+        </div>
+        ${confPct != null ? `
+        <div class="pd-kv">
+          <div class="pd-k">信心度</div>
+          <div class="pd-v"><span class="pd-conf pd-conf-${confLevel}">${confEmoji} ${confPct}%</span></div>
+        </div>` : ''}
+        ${p.notes ? `
+        <div class="pd-kv pd-kv-full">
+          <div class="pd-k">備註</div>
+          <div class="pd-v pd-notes">${p.notes}</div>
+        </div>` : ''}
+      </div>
+
+      <!-- 🔗 清冊對應 -->
+      ${inventoryInfoHTML}
+
+      <!-- ⏰ 時間資訊 -->
+      <div class="pd-section">
+        <div class="pd-section-title">⏰ 時間與上傳資訊</div>
+        <div class="pd-kv">
+          <div class="pd-k">拍攝時間</div>
+          <div class="pd-v">${createdAt}</div>
+        </div>
+        <div class="pd-kv">
+          <div class="pd-k">拍攝教室</div>
+          <div class="pd-v">${p.classroom_code}${roomName ? ' ' + roomName : ''}</div>
+        </div>
+        ${p.device_label ? `
+        <div class="pd-kv">
+          <div class="pd-k">拍攝裝置</div>
+          <div class="pd-v">${p.device_label}</div>
+        </div>` : ''}
+      </div>
+
+      <!-- 🔧 操作 -->
+      <div class="pd-actions">
+        ${p.matched_inventory_id ? `
+          <button class="btn btn-ghost" onclick="openInventoryHistoryFromPhoto(${p.matched_inventory_id}, '${p.detected_property_number || ''}')">
+            🕒 查看此財產的異動歷史
+          </button>` : ''}
+        <button class="btn btn-danger" onclick="deletePhotoFromDetail(${p.id}, '${p.photo_path || ''}')">
+          🗑 刪除這筆紀錄
+        </button>
+      </div>
+    `;
+    try { navigator.vibrate && navigator.vibrate(10); } catch {}
+  };
+
+  window.closePhotoDetail = () => {
+    $('photoDetailModal')?.classList.remove('show');
+    $('photoDetailBackdrop')?.classList.remove('show');
+  };
+
+  window.openPhotoFullscreen = (url) => {
+    const fs = $('photoFullscreen');
+    const img = $('photoFullscreenImg');
+    if (!fs || !img) return;
+    img.src = url;
+    fs.style.display = 'flex';
+  };
+  window.closePhotoFullscreen = () => {
+    const fs = $('photoFullscreen');
+    if (fs) fs.style.display = 'none';
+  };
+
+  // 從詳情頁刪除
+  window.deletePhotoFromDetail = async (id, path) => {
+    if (!confirm('確認刪除這筆紀錄？\n（實體照片也會從雲端刪除）')) return;
+    try {
+      await window.SMES_DB.deletePhoto(id);
+      if (path) window.SMES_DB.deletePhotoFile(path);
+      toast('已刪除', 'success');
+      vibrate(15);
+      closePhotoDetail();
+      loadRoomRecords();
+    } catch (e) {
+      toast('刪除失敗: ' + e.message, 'error');
+    }
+  };
+
+  // 從詳情跳到財產異動歷史
+  window.openInventoryHistoryFromPhoto = async (inventoryId, pn) => {
+    try {
+      const rows = await window.SMES_DB.listAuditByInventory(inventoryId, 100);
+      const body = $('photoDetailBody');
+      if (!body) return;
+
+      const sourceIcon = { photo_recognition: '📷', manual: '✏️', excel_import: '📥', api: '🔌' };
+      const fieldLabel = {
+        brand: '廠牌', model: '型號', acquired_year: '購置民國年',
+        serial_number: '序號 S/N', classroom_code: '教室',
+        location_text: '位置', item_name: '品名',
+        _created: '🆕 新增'
+      };
+
+      const timelineHTML = rows.length === 0
+        ? '<div class="empty">📭 尚無異動紀錄</div>'
+        : `<div class="audit-timeline">${rows.map(r => `
+            <div class="audit-item">
+              <div class="audit-time">${new Date(r.changed_at).toLocaleString('zh-TW', { hour12: false })}</div>
+              <div class="audit-main">
+                <div class="audit-head">
+                  <span class="audit-source">${sourceIcon[r.source] || '📝'} ${r.source}</span>
+                  <span class="audit-field">${fieldLabel[r.field_changed] || r.field_changed}</span>
+                </div>
+                ${r.field_changed === '_created'
+                  ? `<div class="audit-change"><span class="audit-new-big">新增：${r.new_value || ''}</span></div>`
+                  : `<div class="audit-change">
+                      <span class="audit-old">${r.old_value || '(空)'}</span>
+                      <span class="audit-arrow">→</span>
+                      <span class="audit-new">${r.new_value || '(空)'}</span>
+                    </div>`}
+                <div class="audit-meta">
+                  ${r.changed_by_email ? `👤 ${r.changed_by_email}` : ''}
+                  ${r.notes ? `<span class="audit-notes">· ${r.notes}</span>` : ''}
+                </div>
+              </div>
+            </div>`).join('')}</div>`;
+
+      body.innerHTML = `
+        <div style="margin-bottom:12px;">
+          <button class="btn btn-ghost" onclick="openPhotoDetail(state._lastPhotoDetailId)">← 返回照片詳情</button>
+        </div>
+        <h3 style="margin:0 0 12px;font-size:16px;">🕒 #${pn || inventoryId} 異動歷史</h3>
+        ${timelineHTML}
+      `;
+    } catch (e) {
+      toast('載入失敗: ' + e.message, 'error');
+    }
+  };
 
   window.deletePhoto = async (id, path) => {
     if (!confirm('確認刪除？')) return;
