@@ -113,8 +113,32 @@
     const b64 = await fileToBase64(compressed);
     const model = window.SMES_CONFIG.GEMINI_MODEL || 'gemini-2.5-flash';
 
-    // 依 hintType 切換 prompt 重點
-    const BASE_JSON = `輸出純 JSON：{"photo_type":"主機|筆電|螢幕|財產標籤|印表機|網通設備|其他","brand":"","model":"","property_number":"","roc_year":整數,"ad_year":整數,"serial_number":"","is_old_device":true/false,"notes":"","confidence":0-1}。民國年+1911=西元年。欄位不確定填 null。常見混淆：1↔7、0↔O、B↔8、5↔S、2↔Z。「取得日期」才是年份非「列印日期」。Windows Product Key 不是 S/N。`;
+    // 📝 Prompt：用「具體範例」而非「型別描述」避免 Gemini 把「整數」當字面值寫入
+    const BASE_JSON = `必須輸出的 JSON 範例格式（屬性名稱要用雙引號，不要加任何註解）：
+
+{
+  "photo_type": "主機",
+  "brand": "ASUS",
+  "model": "ExpertCenter D500SC",
+  "property_number": "000551",
+  "roc_year": 113,
+  "ad_year": 2024,
+  "serial_number": "ABC123456",
+  "is_old_device": false,
+  "notes": "外觀良好",
+  "confidence": 0.92
+}
+
+欄位說明：
+- photo_type 必為以下之一：主機 / 筆電 / 螢幕 / 財產標籤 / 印表機 / 網通設備 / 其他
+- 文字欄位（brand/model/property_number/serial_number/notes）未辨識時填 null，不要填空字串
+- roc_year/ad_year 為整數（如 113 或 2024），未辨識填 null；民國+1911=西元
+- is_old_device 為布林 true 或 false
+- confidence 為 0.0~1.0 小數
+
+辨識要點：財產編號格式 3020112-0001 / 000551 / 6011417-000036 / AP101 / R610-01
+常見混淆：1↔7、0↔O、B↔8、5↔S、2↔Z
+「取得日期」才是年份（不是「列印日期」）。Windows Product Key 不是 S/N。`;
 
     let focus;
     if (hintType === 'label') {
@@ -146,10 +170,46 @@
     const json = await res.json();
     const txt = json?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!txt) throw new Error('Gemini 回傳空內容');
-    const parsed = JSON.parse(txt);
+    const parsed = cleanAndParseJSON(txt);
     if (parsed.roc_year && !parsed.ad_year) parsed.ad_year = parsed.roc_year + 1911;
     if (parsed.ad_year && !parsed.roc_year) parsed.roc_year = parsed.ad_year - 1911;
     return { parsed, raw: json, compressed };
+  }
+
+  // ============ JSON 清理工具（Gemini 偶爾回傳有 markdown / 註解 / 單引號）============
+  function cleanAndParseJSON(text) {
+    if (!text) throw new Error('Gemini 回傳空內容');
+    let t = String(text).trim();
+
+    // 1. 去除 markdown code fence：```json ... ``` 或 ``` ... ```
+    t = t.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+
+    // 2. 取第一個 { 到最後一個 } 之間（去掉前後無關文字）
+    const first = t.indexOf('{');
+    const last = t.lastIndexOf('}');
+    if (first >= 0 && last > first) t = t.slice(first, last + 1);
+
+    // 3. 第一次直接 parse
+    try { return JSON.parse(t); } catch (e1) {
+      // 4. 修復常見錯誤：註解 / 尾隨逗號 / 單引號
+      let fixed = t
+        .replace(/\/\/[^\n]*/g, '')                    // 行註解
+        .replace(/\/\*[\s\S]*?\*\//g, '')              // 區塊註解
+        .replace(/,\s*([}\]])/g, '$1')                 // 尾隨逗號
+        .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');  // 未加引號的屬性名
+
+      // 5. 單引號 → 雙引號（只在沒有更好解析時才用；可能破壞已含單引號的字串）
+      try { return JSON.parse(fixed); } catch (e2) {
+        try {
+          const quoted = fixed.replace(/'/g, '"');
+          return JSON.parse(quoted);
+        } catch (e3) {
+          console.error('[gemini-json] 原始回傳:', text);
+          console.error('[gemini-json] 修復後:', fixed);
+          throw new Error('Gemini 回傳的 JSON 格式異常，請重拍試試（建議用 Live 相機對好再拍）');
+        }
+      }
+    }
   }
 
   // 臨時從 app_secrets 再抓一次 key（以防 auth.js loadAppSecrets 還沒跑完）

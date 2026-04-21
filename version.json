@@ -1,5 +1,5 @@
 {
-  "version": "v7.4.5",
-  "build": "2026-04-19a",
-  "notes": "改用前端直連 Gemini：避開 Edge Function JWT 驗證陷阱"
+  "version": "v7.4.6",
+  "build": "2026-04-19b",
+  "notes": "修復 Gemini JSON 格式錯誤：改用範例 prompt + 容錯解析"
 }
