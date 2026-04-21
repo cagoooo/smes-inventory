@@ -892,6 +892,21 @@ main { padding: 12px 16px; max-width: 820px; margin: 0 auto; }
 .match-banner.transfer b { color: var(--primary); font-weight: 800; }
 .match-banner .count { flex: 1; }
 
+/* 候選卡的資產類型 badge */
+.asset-type-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 4px;
+  margin-right: 6px;
+  letter-spacing: 0.01em;
+  vertical-align: 1px;
+}
+.asset-type-badge.ab-device { background: #dbeafe; color: #1e40af; }
+.asset-type-badge.ab-ts     { background: #ede9fe; color: #5b21b6; }
+.asset-type-badge.ab-ap     { background: #ffedd5; color: #9a3412; }
+
 .match-suggest.is-transfer {
   border-color: var(--primary);
   background: linear-gradient(135deg, var(--card), #f0f7ff);

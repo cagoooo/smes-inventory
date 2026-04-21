@@ -215,6 +215,16 @@
     async listTouchscreensByRoom(code) {
       return rest(`touchscreens?classroom_code=eq.${encodeURIComponent(code)}&select=*&order=property_number`);
     },
+    async updateTouchscreen(id, patch) {
+      return rest(`touchscreens?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(patch)
+      });
+    },
+    async findTouchscreenByPN(pn) {
+      return rest(`touchscreens?property_number=eq.${encodeURIComponent(pn)}&select=*&limit=3`);
+    },
 
     // 無線 AP
     async listWifiAps() {
@@ -222,6 +232,25 @@
     },
     async listWifiApsByRoom(code) {
       return rest(`wifi_aps?classroom_code=eq.${encodeURIComponent(code)}&select=*&order=ap_code`);
+    },
+
+    // 🎯 跨三表搜尋：AI 辨識的 property_number / model 同時比對 3 種資產
+    async searchAssetsByPN(pn) {
+      if (!pn) return { inventory: [], touchscreens: [], wifiAps: [] };
+      const q = encodeURIComponent(pn);
+      const [inventory, touchscreens, wifiAps] = await Promise.all([
+        rest(`inventory_items?property_number=eq.${q}&select=*&limit=3`).catch(() => []),
+        rest(`touchscreens?property_number=eq.${q}&select=*&limit=3`).catch(() => []),
+        // AP 可能是 ap_code (AP101/R610-01/舊AP-01), property_number 或 full_property_number
+        rest(`wifi_aps?or=(property_number.eq.${q},ap_code.eq.${q},full_property_number.eq.${q})&select=*&limit=3`).catch(() => []),
+      ]);
+      return { inventory, touchscreens, wifiAps };
+    },
+    async searchAssetsByMAC(mac) {
+      if (!mac) return { wifiAps: [] };
+      const clean = String(mac).toUpperCase().replace(/[-:.]/g, '').match(/.{1,2}/g)?.join(':') || mac;
+      const wifiAps = await rest(`wifi_aps?mac_address=eq.${encodeURIComponent(clean)}&select=*&limit=3`).catch(() => []);
+      return { wifiAps };
     },
     async updateWifiAp(id, patch) {
       return rest(`wifi_aps?id=eq.${id}`, {

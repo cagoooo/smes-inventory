@@ -329,18 +329,43 @@
       // 本教室資產清單展開區塊
       renderRoomAssets(inventory, touchscreens, wifiAps);
 
-      // 本教室進度條：photos / inventory
-      const pct = inventory.length > 0 ? Math.min(100, Math.round(photos.length / inventory.length * 100)) : 0;
+      // 本教室進度條：計算 3 類資產總數 vs 已拍照過的資產數
+      // 「已盤點」判定：看 photos 中有比對到 inventory/touchscreen/wifi_ap 的 ID
+      const totalAssets = inventory.length + touchscreens.length + wifiAps.length;
+
+      // 統計已拍過的三類資產（去重）
+      const matchedInvIds = new Set(
+        photos.filter(p => p.matched_inventory_id).map(p => p.matched_inventory_id)
+      );
+      const matchedTsIds = new Set(
+        photos.filter(p => p.matched_touchscreen_id).map(p => p.matched_touchscreen_id)
+      );
+      const matchedApIds = new Set(
+        photos.filter(p => p.matched_wifi_ap_id).map(p => p.matched_wifi_ap_id)
+      );
+      const coveredCount = matchedInvIds.size + matchedTsIds.size + matchedApIds.size;
+      // 若 photos 有紀錄但沒對應任何 ID（自由拍），仍算已拍過（視為輔助紀錄）
+      const unmatchedPhotos = photos.filter(p =>
+        !p.matched_inventory_id && !p.matched_touchscreen_id && !p.matched_wifi_ap_id
+      ).length;
+
+      const pct = totalAssets > 0 ? Math.min(100, Math.round(coveredCount / totalAssets * 100)) : 0;
       const bar = $('roomProgressBar');
       const lbl = $('roomProgressLabel');
       if (bar && lbl) {
-        if (inventory.length === 0) {
+        if (totalAssets === 0) {
           bar.parentElement.style.display = 'none';
         } else {
           bar.parentElement.style.display = 'block';
           bar.style.width = pct + '%';
           bar.className = 'progress-fill ' + (pct >= 100 ? 'done' : pct >= 50 ? 'half' : 'start');
-          lbl.textContent = `${photos.length} / ${inventory.length} (${pct}%)`;
+          // 顯示：已盤點/總數 + 細分（如有）
+          const detail = [];
+          if (inventory.length) detail.push(`💻${matchedInvIds.size}/${inventory.length}`);
+          if (touchscreens.length) detail.push(`🖥${matchedTsIds.size}/${touchscreens.length}`);
+          if (wifiAps.length) detail.push(`📡${matchedApIds.size}/${wifiAps.length}`);
+          const suffix = unmatchedPhotos > 0 ? ` +${unmatchedPhotos}張自由拍` : '';
+          lbl.innerHTML = `<b>${coveredCount} / ${totalAssets}</b> (${pct}%) <span style="font-size:11px;opacity:0.85;">${detail.join(' · ')}${suffix}</span>`;
         }
       }
 
@@ -1136,37 +1161,67 @@ ${hasMatch ? `
     const area = $('matchArea');
     area.innerHTML = '';
     let candidates = [];
-    let matchMethod = '';  // 'exact' / 'fuzzy_ocr' / 'fuzzy_all' / 'model' / ''
-    let pnNoMatch = false;  // AI 有辨識到 PN 但找不到任何對應
+    let matchMethod = '';  // 'exact' / 'fuzzy_ocr' / 'fuzzy_all' / 'model' / 'cross_asset'
+    let pnNoMatch = false;
 
+    // 🎯 Step 0: 跨 3 表搜尋（inventory + touchscreens + wifi_aps）
+    // 讓觸屏拍照、AP 拍照也能自動比對到正確 table
     if (p.property_number) {
       const pn = p.property_number.trim();
-      // Step 1: 精確比對
       try {
-        const rs = await window.SMES_DB.findInventoryByExactPN(pn);
-        if (rs.length > 0) {
-          candidates = rs.slice(0, 3);
-          matchMethod = 'exact';
-        }
-      } catch (e) { console.warn('[exact match]', e); }
+        const cross = await window.SMES_DB.searchAssetsByPN(pn);
+        const tsMatches = (cross.touchscreens || []).map(x => ({ ...x, _type: 'touchscreen' }));
+        const apMatches = (cross.wifiAps || []).map(x => ({ ...x, _type: 'wifi_ap' }));
+        const invMatches = (cross.inventory || []).map(x => ({ ...x, _type: 'inventory' }));
 
-      // Step 2: OCR 混淆字元 fuzzy（1↔7、0↔O、B↔8 等）
+        // 智慧排序：依 AI 辨識的線索判斷優先表
+        // brand = JECTOR/創源 → 優先觸屏
+        // brand 含 Extreme/Ruckus/NETGEAR 或 ap_code 格式 → 優先 AP
+        const brand = (p.brand || '').toLowerCase();
+        const isLikelyTs = /jector|創源/i.test(p.brand || '') || /\d+吋|inch/i.test(p.model || '');
+        const isLikelyAp = /extreme|ruckus|netgear/i.test(p.brand || '') ||
+                           /^(AP\d+|R610-\d+|舊AP-\d+)$/i.test(pn) ||
+                           pn.startsWith('6011417-') || pn.startsWith('6011428-');
+
+        if (isLikelyAp && apMatches.length) {
+          candidates = [...apMatches, ...tsMatches, ...invMatches];
+        } else if (isLikelyTs && tsMatches.length) {
+          candidates = [...tsMatches, ...apMatches, ...invMatches];
+        } else {
+          candidates = [...invMatches, ...tsMatches, ...apMatches];
+        }
+        candidates = candidates.slice(0, 5);
+        if (candidates.length > 0) matchMethod = 'cross_asset';
+      } catch (e) { console.warn('[cross-asset search]', e); }
+
+      // Step 1: 若跨表沒找到，fallback 到原本只搜 inventory_items 的流程
+      if (candidates.length === 0) {
+        try {
+          const rs = await window.SMES_DB.findInventoryByExactPN(pn);
+          if (rs.length > 0) {
+            candidates = rs.map(x => ({ ...x, _type: 'inventory' })).slice(0, 3);
+            matchMethod = 'exact';
+          }
+        } catch (e) { console.warn('[exact match]', e); }
+      }
+
+      // Step 2: OCR 混淆字元 fuzzy
       if (candidates.length === 0) {
         try {
           const rs = await window.SMES_DB.findInventoryByFuzzyPN(pn);
           if (rs.length > 0) {
-            candidates = rs.slice(0, 3);
+            candidates = rs.map(x => ({ ...x, _type: 'inventory' })).slice(0, 3);
             matchMethod = 'fuzzy_ocr';
           }
         } catch (e) { console.warn('[fuzzy-ocr match]', e); }
       }
 
-      // Step 3: 傳統全欄 fuzzy（最後備援）
+      // Step 3: 全欄 fuzzy
       if (candidates.length === 0) {
         try {
           const rs = await window.SMES_DB.searchInventory(pn);
           if (rs.length > 0) {
-            candidates = rs.slice(0, 3);
+            candidates = rs.map(x => ({ ...x, _type: 'inventory' })).slice(0, 3);
             matchMethod = 'fuzzy_all';
           }
         } catch (e) {}
@@ -1175,11 +1230,11 @@ ${hasMatch ? `
       if (candidates.length === 0) pnNoMatch = true;
     }
 
-    // Step 4: 若無 PN 或 PN 找不到，用 model 搜
+    // Step 4: 若無 PN 或 PN 找不到，用 model 搜 inventory
     if (candidates.length === 0 && p.model) {
       try {
         const rs = await window.SMES_DB.searchInventory(p.model);
-        candidates = rs.slice(0, 3);
+        candidates = rs.map(x => ({ ...x, _type: 'inventory' })).slice(0, 3);
         if (candidates.length > 0) matchMethod = 'model';
       } catch (e) {}
     }
@@ -1247,12 +1302,29 @@ ${hasMatch ? `
       const fromWhere = c.classroom_code
         ? (roomInfo ? `${c.classroom_code} ${roomInfo.name}` : c.classroom_code)
         : '(未設定教室)';
+      // 🎯 依類型顯示不同資訊
+      const typeBadge = {
+        inventory: '<span class="asset-type-badge ab-device">💻 電腦</span>',
+        touchscreen: '<span class="asset-type-badge ab-ts">🖥 觸屏</span>',
+        wifi_ap: '<span class="asset-type-badge ab-ap">📡 AP</span>',
+      }[c._type] || '';
+
+      const title = c._type === 'wifi_ap'
+        ? `${c.ap_code || c.property_number || '(無編號)'} · ${c.brand_model || ''}`
+        : c._type === 'touchscreen'
+        ? `${c.property_number || '(登帳中)'} · ${c.brand || ''} ${c.size_inch ? c.size_inch + '吋' : ''} ${c.model_code || ''}`
+        : `${c.property_number || '(無編號)'} · ${c.model || c.item_name || ''}`;
+
+      const desc = c._type === 'wifi_ap'
+        ? `${c.mac_address || ''} ${c.acquired_year ? '· 建置 '+c.acquired_year+'年' : ''}`
+        : `${c.brand || ''} ${c.acquired_year ? '· 取得 '+c.acquired_year+'年' : ''}`;
+
       return `
-      <div class="match-suggest ${isTransfer ? 'is-transfer' : ''}" data-id="${c.id}">
+      <div class="match-suggest ${isTransfer ? 'is-transfer' : ''}" data-id="${c.id}" data-type="${c._type || 'inventory'}">
         <div class="check">✓</div>
         <div class="info">
-          <div class="title">${c.property_number || '(無編號)'} · ${c.model || c.item_name || ''}</div>
-          <div class="desc">${c.brand || ''} ${c.acquired_year ? '· 取得 '+c.acquired_year+'年' : ''} · <span class="from-room">${isTransfer ? '🚛 目前登記在 ' : '📍 '}${fromWhere}</span></div>
+          <div class="title">${typeBadge} ${title}</div>
+          <div class="desc">${desc} · <span class="from-room">${isTransfer ? '🚛 目前登記在 ' : '📍 '}${fromWhere}</span></div>
         </div>
       </div>`;
     }).join('') + `<div id="invDiffArea"></div>`;
@@ -1262,14 +1334,14 @@ ${hasMatch ? `
         area.querySelectorAll('.match-suggest').forEach(x => x.classList.remove('selected'));
         el.classList.add('selected');
         vibrate(15);
-        // 觸發差異比對
         const id = parseInt(el.dataset.id);
-        const cand = lastCandidates.find(c => c.id === id);
+        const type = el.dataset.type;
+        const cand = lastCandidates.find(c => c.id === id && (c._type || 'inventory') === type);
         if (cand) renderInventoryDiff(cand);
       });
     });
 
-    // 若只有 1 筆建議 → 自動選中並立即顯示差異
+    // 若只有 1 筆建議 → 自動選中
     if (candidates.length === 1) {
       const el = area.querySelector('.match-suggest');
       if (el) {
@@ -1552,19 +1624,32 @@ ${hasMatch ? `
         return;
       }
 
+      // 🔖 依候選類型決定 record 中的 matched_*_id 欄位
+      const selEl = document.querySelector('#matchArea .match-suggest.selected');
+      const selType = selEl?.dataset.type || 'inventory';
+      // 重設所有 matched_*_id
+      record.matched_inventory_id = null;
+      record.matched_touchscreen_id = null;
+      record.matched_wifi_ap_id = null;
+      if (matched_id) {
+        if (selType === 'touchscreen') record.matched_touchscreen_id = matched_id;
+        else if (selType === 'wifi_ap') record.matched_wifi_ap_id = matched_id;
+        else record.matched_inventory_id = matched_id;
+      }
+
       // 線上：直接上傳
       const photoUrl = await window.SMES_DB.uploadPhoto(state.currentFile, fileName);
       record.photo_url = photoUrl;
       const insertedPhoto = await window.SMES_DB.insertPhoto(record);
       const photoRecordId = insertedPhoto?.id || null;
 
-      // 🔄 同步更新財產清冊（若使用者勾選了差異欄位）+ 寫入異動歷史
+      // 🔄 同步更新對應資產表
       let invUpdated = 0;
+      let updatedTable = '';
       if (matched_id) {
         const checks = document.querySelectorAll('#invDiffArea .inv-diff-check:checked');
         if (checks.length > 0) {
-          // 找到原 candidate 以便 audit log 記錄舊值
-          const candidate = lastCandidates.find(c => c.id === matched_id);
+          const candidate = lastCandidates.find(c => c.id === matched_id && (c._type || 'inventory') === selType);
 
           const patch = {};
           const auditRows = [];
@@ -1574,47 +1659,58 @@ ${hasMatch ? `
             let finalNewVal = newVal;
             if (field === 'acquired_year') {
               patch[field] = newVal ? parseInt(newVal) : null;
-              finalNewVal = newVal;
             } else if (field === 'classroom_code') {
               patch[field] = room.code;
-              patch['location_text'] = room.code;
+              if (selType === 'inventory') patch['location_text'] = room.code;
               finalNewVal = room.code;
             } else {
               patch[field] = newVal || null;
             }
-            // 組 audit log row
-            const oldVal = candidate ? candidate[field] : null;
-            auditRows.push({
-              inventory_id: matched_id,
-              property_number: candidate?.property_number || null,
-              changed_by: user?.id || null,
-              changed_by_email: user?.email || null,
-              field_changed: field,
-              old_value: oldVal != null ? String(oldVal) : null,
-              new_value: finalNewVal != null ? String(finalNewVal) : null,
-              source: 'photo_recognition',
-              photo_record_id: photoRecordId,
-              notes: `拍照自動辨識更新（${room.code} ${room.name}）`
-            });
+            // audit log 只記 inventory_items 異動（目前 audit table schema 綁定它）
+            if (selType === 'inventory') {
+              const oldVal = candidate ? candidate[field] : null;
+              auditRows.push({
+                inventory_id: matched_id,
+                property_number: candidate?.property_number || null,
+                changed_by: user?.id || null,
+                changed_by_email: user?.email || null,
+                field_changed: field,
+                old_value: oldVal != null ? String(oldVal) : null,
+                new_value: finalNewVal != null ? String(finalNewVal) : null,
+                source: 'photo_recognition',
+                photo_record_id: photoRecordId,
+                notes: `拍照自動辨識更新（${room.code} ${room.name}）`
+              });
+            }
           });
 
           try {
-            await window.SMES_DB.updateInventoryItem(matched_id, patch);
+            if (selType === 'touchscreen') {
+              await window.SMES_DB.updateTouchscreen(matched_id, patch);
+              updatedTable = '🖥 觸屏清冊';
+            } else if (selType === 'wifi_ap') {
+              await window.SMES_DB.updateWifiAp(matched_id, patch);
+              updatedTable = '📡 AP 清冊';
+            } else {
+              await window.SMES_DB.updateInventoryItem(matched_id, patch);
+              updatedTable = '💻 財產清冊';
+            }
             invUpdated = checks.length;
-            // 寫入 audit log（不阻斷主流程）
-            window.SMES_DB.insertAuditLogs(auditRows).catch(err => {
-              console.warn('[audit-log insert]', err);
-            });
+            if (auditRows.length > 0) {
+              window.SMES_DB.insertAuditLogs(auditRows).catch(err => {
+                console.warn('[audit-log insert]', err);
+              });
+            }
           } catch (err) {
-            console.error('[inv-update]', err);
-            toast('⚠️ 財產清冊更新失敗: ' + err.message, 'error');
+            console.error('[asset-update]', err);
+            toast('⚠️ 資料庫更新失敗: ' + err.message, 'error');
           }
         }
       }
 
       toast(
         invUpdated > 0
-          ? `✅ 已儲存 + 同步更新財產清冊 ${invUpdated} 個欄位`
+          ? `✅ 已儲存 + 同步更新${updatedTable || '清冊'} ${invUpdated} 個欄位`
           : '✅ 已儲存，可繼續拍下一張',
         'success'
       );
