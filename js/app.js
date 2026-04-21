@@ -826,6 +826,15 @@ ${hasMatch ? `
     $('matchArea').innerHTML = '';
     vibrate([15, 10, 15]);
 
+    // 🎬 立刻滑到辨識中畫面，讓使用者知道正在處理
+    // 用 requestAnimationFrame 確保 DOM layout 完成後再 scroll
+    requestAnimationFrame(() => {
+      const panel = $('previewPanel');
+      if (panel) {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+
     // 自動啟動辨識（傳入 hint_type 讓 AI 針對不同類型優化）
     try {
       const hintType = state.captureHint || 'auto';  // 'auto' / 'label' / 'device'
@@ -858,7 +867,19 @@ ${hasMatch ? `
       $('detectArea').style.display = 'block';
       toast('✨ 辨識完成，請檢查後儲存', 'success');
       vibrate(40);
-      $('previewPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      // 🎯 辨識完成後，稍等 layout 完成，再滑到「匹配建議區」讓使用者看到結果
+      // 比起滑到 previewPanel 頂端（會停在大圖），直接看到比對結果更有感
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const matchArea = $('matchArea');
+          const detectArea = $('detectArea');
+          const target = (matchArea && matchArea.children.length > 0) ? matchArea : detectArea;
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 100);
+      });
     } catch (err) {
       $('recognizeLoading').style.display = 'none';
       $('detectArea').style.display = 'block';

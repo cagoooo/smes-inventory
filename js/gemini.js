@@ -60,15 +60,13 @@
 
     let res = await doFetch(userToken);
 
-    // 🔁 若 401，主動 refresh session 再試一次
+    // 🔁 若 401，主動 refresh session 再試一次（但不強制登出）
     if (res.status === 401 && window.__SB) {
       console.warn('[gemini-proxy] 401 received, trying to refresh session...');
       try {
         const { data: { session }, error: refreshErr } = await window.__SB.auth.refreshSession();
         if (!refreshErr && session?.access_token) {
           res = await doFetch(session.access_token);
-        } else {
-          console.warn('[auth-refresh] failed:', refreshErr);
         }
       } catch (e) {
         console.warn('[auth-refresh] exception:', e);
@@ -78,11 +76,9 @@
     if (!res.ok) {
       const err = await res.text().catch(() => '');
       if (res.status === 401) {
-        // 🔑 Refresh 也失敗 → 強制登出 + 跳登入畫面
-        if (window.SMES_AUTH?.handleSessionExpired) {
-          await window.SMES_AUTH.handleSessionExpired('您已久未使用，登入會話過期（Google 登入須每 30 天重新登入一次）');
-        }
-        throw new Error('登入已過期，請重新登入 Google 帳號後再試');
+        // ⚠️ 不自動登出！proxy 401 可能只是 Edge Function 的 verify_jwt 設定問題，不代表 session 失效。
+        // 丟錯誤即可，讓上層 recognize() 知道 proxy 不可用
+        throw new Error(`代理伺服器驗證失敗（可能是 Edge Function 設定問題）`);
       }
       if (res.status === 429) {
         throw new Error('辨識太頻繁，請稍候 1 分鐘再試');
@@ -235,7 +231,13 @@
     return null;
   }
 
-  // ============ 主入口：優先直連，proxy 作為最後 fallback ============
+  // 判斷錯誤是否為 Gemini API 問題（503/429/quota）— 此時 fallback 到 proxy 沒意義（同一個 Gemini）
+  function isGeminiServerError(err) {
+    const msg = String(err?.message || '');
+    return /Gemini API (5\d\d|429)|UNAVAILABLE|high demand|quota|rate.?limit|忙線|配額/i.test(msg);
+  }
+
+  // ============ 主入口：優先直連，proxy 僅在「非 Gemini 服務錯誤」時 fallback ============
   async function recognize(file, hintType = 'auto') {
     let hasKey = localStorage.getItem(KEY_STORAGE) || window.SMES_CONFIG.GEMINI_API_KEY;
 
@@ -249,6 +251,19 @@
       try {
         return await recognizeDirect(file, hintType);
       } catch (e) {
+        // 🚦 503/429/quota 是 Gemini 本身的問題，proxy 也是打同一個 Gemini → fallback 沒用
+        if (isGeminiServerError(e)) {
+          console.warn('[gemini-direct] Gemini 服務錯誤，不 fallback:', e.message);
+          // 對使用者顯示友善訊息
+          if (/503|UNAVAILABLE|high demand/i.test(e.message)) {
+            throw new Error('🔥 Gemini AI 暫時忙線（伺服器繁忙），請等 30 秒後再試一次');
+          }
+          if (/429|quota|rate/i.test(e.message)) {
+            throw new Error('⏱ Gemini API 呼叫太頻繁，請等 1 分鐘後再試');
+          }
+          throw e;
+        }
+        // 其他錯誤（如 JSON 解析失敗、網路問題）→ 試 proxy
         console.warn('[gemini-direct] 失敗，嘗試 proxy fallback:', e.message);
         try {
           return await recognizeViaProxy(file, hintType);
@@ -257,7 +272,7 @@
         }
       }
     }
-    // 沒 key（未登入或 RLS 阻擋）→ 用 proxy（會遇到 verify_jwt 但至少有錯誤訊息）
+    // 沒 key（未登入或 RLS 阻擋）→ 用 proxy
     return await recognizeViaProxy(file, hintType);
   }
 
