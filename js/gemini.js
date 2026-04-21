@@ -34,17 +34,22 @@
     const compressed = await compressImage(file);
     const b64 = await fileToBase64(compressed);
 
-    // 🔐 優先用已登入使用者的 access_token，沒登入才退回 anon key
-    // Edge Function verify_jwt=true 時必須是合法的使用者 JWT
-    const userToken = window.SMES_AUTH?.getAccessToken?.();
-
     const url = `${C.SUPABASE_URL}/functions/v1/gemini-proxy`;
-    const res = await fetch(url, {
+
+    // 🔄 取得保證有效的 token（即將過期會自動 refresh）
+    let userToken = null;
+    if (window.SMES_AUTH?.getFreshAccessToken) {
+      userToken = await window.SMES_AUTH.getFreshAccessToken();
+    } else if (window.SMES_AUTH?.getAccessToken) {
+      userToken = window.SMES_AUTH.getAccessToken();
+    }
+
+    const doFetch = (token) => fetch(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         apikey: C.SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${userToken || C.SUPABASE_ANON_KEY}`
+        Authorization: `Bearer ${token || C.SUPABASE_ANON_KEY}`
       },
       body: JSON.stringify({
         image_base64: b64,
@@ -53,13 +58,26 @@
       })
     });
 
+    let res = await doFetch(userToken);
+
+    // 🔁 若 401，主動 refresh session 再試一次
+    if (res.status === 401 && window.__SB) {
+      console.warn('[gemini-proxy] 401 received, trying to refresh session...');
+      try {
+        const { data: { session } } = await window.__SB.auth.refreshSession();
+        if (session?.access_token) {
+          res = await doFetch(session.access_token);
+        }
+      } catch (e) {
+        console.warn('[auth-refresh]', e);
+      }
+    }
+
     if (!res.ok) {
       const err = await res.text().catch(() => '');
-      // 401 = 通常是 session 過期或未登入，給使用者清楚的指示
       if (res.status === 401) {
-        throw new Error('登入已過期，請重新整理頁面並重新登入 Google 帳號');
+        throw new Error('登入已過期且自動刷新失敗，請重新整理頁面並重新登入 Google 帳號');
       }
-      // 429 = rate limit
       if (res.status === 429) {
         throw new Error('辨識太頻繁，請稍候 1 分鐘再試');
       }

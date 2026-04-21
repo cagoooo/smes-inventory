@@ -114,7 +114,8 @@
   }
 
   function getAccessToken() {
-    // 從 localStorage 撈出 access token（Supabase SDK 存在 'sb-<ref>-auth-token'）
+    // 同步版本 — 從 localStorage 撈出 access token
+    // ⚠️ 若 token 已過期，會回傳過期的 token
     const keys = Object.keys(localStorage);
     const authKey = keys.find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
     if (!authKey) return null;
@@ -122,6 +123,39 @@
       const data = JSON.parse(localStorage.getItem(authKey));
       return data?.access_token || null;
     } catch { return null; }
+  }
+
+  // 🔄 取得保證有效的 access_token — 若即將過期會自動 refresh
+  // 重要 API 呼叫（如 Edge Function）應該用這個版本
+  async function getFreshAccessToken() {
+    if (!sb) return getAccessToken();
+    try {
+      const { data: { session }, error } = await sb.auth.getSession();
+      if (error) {
+        console.warn('[auth] getSession error:', error);
+        return getAccessToken();
+      }
+      if (!session) return null;
+      // 檢查是否即將過期（<5 分鐘）→ 主動 refresh
+      const expiresAt = session.expires_at || 0;  // unix timestamp (秒)
+      const now = Math.floor(Date.now() / 1000);
+      const remaining = expiresAt - now;
+      if (remaining < 300) {
+        // 少於 5 分鐘 → refresh
+        try {
+          const { data: { session: newSession }, error: refreshErr } = await sb.auth.refreshSession();
+          if (!refreshErr && newSession) {
+            return newSession.access_token;
+          }
+        } catch (e) {
+          console.warn('[auth] refresh failed:', e);
+        }
+      }
+      return session.access_token;
+    } catch (e) {
+      console.warn('[auth] getFreshAccessToken error:', e);
+      return getAccessToken();
+    }
   }
 
   function onReady(cb) {
@@ -138,6 +172,7 @@
     signOut,
     getUser,
     getAccessToken,
+    getFreshAccessToken,
     onReady,
     ALLOWED_DOMAIN
   };
