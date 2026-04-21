@@ -1,5 +1,5 @@
 {
-  "version": "v7.4.9",
-  "build": "2026-04-19d",
-  "notes": "修錯誤處理：503 不誤判為登入過期，Gemini 忙線只提示重試 + UX 滑動優化"
+  "version": "v7.4.10",
+  "build": "2026-04-21a",
+  "notes": "修 Gemini JSON 截斷：關閉 thinking mode（thinkingBudget=0）+ maxOutputTokens 從 1024 提升至 2048"
 }

@@ -155,7 +155,14 @@
           { text: PROMPT },
           { inline_data: { mime_type: 'image/jpeg', data: b64 } }
         ]}],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.1, maxOutputTokens: 1024 }
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+          maxOutputTokens: 2048,
+          // 🧠 關鍵：Gemini 2.5 系列預設啟用 thinking mode，會吃掉 output token 額度
+          // 導致 JSON 在 "confidence": 處被截斷。設為 0 強制關閉 thinking
+          thinkingConfig: { thinkingBudget: 0 }
+        }
       })
     });
     if (!res.ok) {
