@@ -1,5 +1,5 @@
 {
-  "version": "v7.4.4",
-  "build": "2026-04-18z",
-  "notes": "登入過期自動彈出登入畫面 + 清楚提示，不用手動重整"
+  "version": "v7.4.5",
+  "build": "2026-04-19a",
+  "notes": "改用前端直連 Gemini：避開 Edge Function JWT 驗證陷阱"
 }

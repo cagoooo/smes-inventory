@@ -103,16 +103,28 @@
     return { parsed, raw: data, compressed };
   }
 
-  // ============ 備援：本機 Key 直接呼叫（若 Edge Function 尚未設定 Secret 可切回此模式） ============
-  async function recognizeDirect(file) {
+  // ============ 直連 Gemini API（主要方式）============
+  // Key 存在 localStorage，由 auth.js 登入成功後從 app_secrets 表讀取
+  async function recognizeDirect(file, hintType = 'auto') {
     const key = localStorage.getItem(KEY_STORAGE) || window.SMES_CONFIG.GEMINI_API_KEY;
-    if (!key) throw new Error('Edge Function 無法使用且本機無 API Key');
+    if (!key) throw new Error('Gemini API Key 尚未載入，請重新整理頁面');
 
     const compressed = await compressImage(file);
     const b64 = await fileToBase64(compressed);
-    const model = window.SMES_CONFIG.GEMINI_MODEL;
+    const model = window.SMES_CONFIG.GEMINI_MODEL || 'gemini-2.5-flash';
 
-    const PROMPT = `你是台灣國小財產盤點 AI。分析照片回傳 JSON：{"photo_type":"主機|筆電|螢幕|財產標籤|其他","brand":"","model":"","property_number":"","roc_year":整數,"ad_year":整數,"serial_number":"","notes":"","confidence":0-1}。民國年+1911=西元年。欄位不確定填 null。`;
+    // 依 hintType 切換 prompt 重點
+    const BASE_JSON = `輸出純 JSON：{"photo_type":"主機|筆電|螢幕|財產標籤|印表機|網通設備|其他","brand":"","model":"","property_number":"","roc_year":整數,"ad_year":整數,"serial_number":"","is_old_device":true/false,"notes":"","confidence":0-1}。民國年+1911=西元年。欄位不確定填 null。常見混淆：1↔7、0↔O、B↔8、5↔S、2↔Z。「取得日期」才是年份非「列印日期」。Windows Product Key 不是 S/N。`;
+
+    let focus;
+    if (hintType === 'label') {
+      focus = `【拍攝目標：財產標籤貼紙】請特別專注在 property_number 與 roc_year（從「取得日期」讀出）。`;
+    } else if (hintType === 'device') {
+      focus = `【拍攝目標：設備本體】請特別專注在 brand（logo）、model（銘牌型號）、serial_number。`;
+    } else {
+      focus = `台灣國小財產盤點：紅白貼紙→財產標籤；品牌機身→主機/筆電/螢幕。`;
+    }
+    const PROMPT = `你是台灣國小財產盤點 AI 視覺辨識助手。\n\n${focus}\n\n${BASE_JSON}`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
     const res = await fetch(url, {
@@ -126,25 +138,67 @@
         generationConfig: { responseMimeType: 'application/json', temperature: 0.1, maxOutputTokens: 1024 }
       })
     });
-    if (!res.ok) throw new Error(`Gemini API ${res.status}: ` + (await res.text()).slice(0,200));
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      if (res.status === 429) throw new Error('Gemini 配額不足或請求過多，請稍後再試');
+      throw new Error(`Gemini API ${res.status}: ` + t.slice(0, 200));
+    }
     const json = await res.json();
     const txt = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!txt) throw new Error('Gemini 回傳空內容');
     const parsed = JSON.parse(txt);
     if (parsed.roc_year && !parsed.ad_year) parsed.ad_year = parsed.roc_year + 1911;
     if (parsed.ad_year && !parsed.roc_year) parsed.roc_year = parsed.ad_year - 1911;
     return { parsed, raw: json, compressed };
   }
 
-  async function recognize(file, hintType = 'auto') {
+  // 臨時從 app_secrets 再抓一次 key（以防 auth.js loadAppSecrets 還沒跑完）
+  async function fetchKeyFromDBOnDemand() {
+    if (!window.__SB) return null;
     try {
-      return await recognizeViaProxy(file, hintType);
-    } catch (e) {
-      console.warn('[gemini-proxy] 失敗，嘗試本機 Key 備援:', e.message);
-      if (localStorage.getItem(KEY_STORAGE) || window.SMES_CONFIG.GEMINI_API_KEY) {
-        return await recognizeDirect(file);  // direct 模式仍用通用 prompt
+      const { data: { session } } = await window.__SB.auth.getSession();
+      if (!session?.access_token) return null;
+      const C = window.SMES_CONFIG;
+      const res = await fetch(`${C.SUPABASE_URL}/rest/v1/app_secrets?key=eq.gemini_api_key&select=value`, {
+        headers: {
+          apikey: C.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+      if (!res.ok) return null;
+      const rows = await res.json();
+      if (rows?.[0]?.value) {
+        localStorage.setItem(KEY_STORAGE, rows[0].value);
+        return rows[0].value;
       }
-      throw e;
+    } catch {}
+    return null;
+  }
+
+  // ============ 主入口：優先直連，proxy 作為最後 fallback ============
+  async function recognize(file, hintType = 'auto') {
+    let hasKey = localStorage.getItem(KEY_STORAGE) || window.SMES_CONFIG.GEMINI_API_KEY;
+
+    // 若 localStorage 沒 key，嘗試從 DB 拿（登入者才能讀）
+    if (!hasKey) {
+      hasKey = await fetchKeyFromDBOnDemand();
     }
+
+    // 若有 key → 優先直連（避開 Edge Function verify_jwt 陷阱）
+    if (hasKey) {
+      try {
+        return await recognizeDirect(file, hintType);
+      } catch (e) {
+        console.warn('[gemini-direct] 失敗，嘗試 proxy fallback:', e.message);
+        try {
+          return await recognizeViaProxy(file, hintType);
+        } catch (e2) {
+          throw e;  // 回傳最初的 direct 錯誤（較有用）
+        }
+      }
+    }
+    // 沒 key（未登入或 RLS 阻擋）→ 用 proxy（會遇到 verify_jwt 但至少有錯誤訊息）
+    return await recognizeViaProxy(file, hintType);
   }
 
   function hasKey() {

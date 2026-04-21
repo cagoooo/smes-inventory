@@ -24,6 +24,32 @@
     window.__SB = sb; // debug 用
   }
 
+  // 從 Supabase app_secrets 表讀 Gemini API Key 到 localStorage（供前端直連 Gemini）
+  async function loadAppSecrets() {
+    try {
+      const C = window.SMES_CONFIG;
+      const userToken = (await sb.auth.getSession())?.data?.session?.access_token;
+      if (!userToken) return;
+      const res = await fetch(`${C.SUPABASE_URL}/rest/v1/app_secrets?key=eq.gemini_api_key&select=value`, {
+        headers: {
+          apikey: C.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${userToken}`
+        }
+      });
+      if (!res.ok) {
+        console.warn('[app_secrets] fetch failed:', res.status);
+        return;
+      }
+      const rows = await res.json();
+      if (rows?.[0]?.value) {
+        localStorage.setItem('smes_gemini_api_key', rows[0].value);
+        console.log('[app_secrets] Gemini key loaded');
+      }
+    } catch (e) {
+      console.warn('[app_secrets] error:', e);
+    }
+  }
+
   async function initSession() {
     const { data: { session } } = await sb.auth.getSession();
     currentUser = session?.user || null;
@@ -38,6 +64,9 @@
         currentUser = null;
       }
     }
+
+    // 登入成功 → 載入 Gemini API Key 到 localStorage
+    if (currentUser) loadAppSecrets();
 
     sessionReady = true;
     updateAuthUI();
@@ -54,6 +83,10 @@
       }
       currentUser = newUser;
       updateAuthUI();
+      // 每次登入/token 更新 → 重新載入 Gemini key
+      if (newUser && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+        loadAppSecrets();
+      }
     });
   }
 
