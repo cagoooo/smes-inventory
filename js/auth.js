@@ -165,6 +165,40 @@
 
   function getUser() { return currentUser; }
 
+  // 🔄 會話完全過期時，清空登入狀態 + 彈出重新登入畫面
+  async function handleSessionExpired(reason = '登入會話已過期') {
+    try { await sb?.auth.signOut(); } catch {}
+    // 清除所有 sb-* localStorage
+    Object.keys(localStorage)
+      .filter(k => k.startsWith('sb-'))
+      .forEach(k => localStorage.removeItem(k));
+    currentUser = null;
+
+    // 顯示登入畫面 + 提示
+    const loginScreen = document.getElementById('loginScreen');
+    const appShell = document.getElementById('appShell');
+    if (loginScreen && appShell) {
+      appShell.style.display = 'none';
+      loginScreen.style.display = 'flex';
+
+      // 加個過期提示
+      const card = loginScreen.querySelector('.login-card');
+      if (card && !card.querySelector('.session-expired-banner')) {
+        const banner = document.createElement('div');
+        banner.className = 'session-expired-banner';
+        banner.style.cssText = `
+          background: var(--danger-soft); color: var(--danger);
+          padding: 10px 14px; border-radius: 10px;
+          font-size: 13px; line-height: 1.45; margin-bottom: 14px;
+          border-left: 4px solid var(--danger);
+          text-align: left;
+        `;
+        banner.innerHTML = `⏰ <b>${reason}</b><br>請按下方「用 Google 登入」重新登入即可繼續使用`;
+        card.insertBefore(banner, card.firstChild);
+      }
+    }
+  }
+
   window.SMES_AUTH = {
     initClient,
     initSession,
@@ -173,6 +207,7 @@
     getUser,
     getAccessToken,
     getFreshAccessToken,
+    handleSessionExpired,
     onReady,
     ALLOWED_DOMAIN
   };

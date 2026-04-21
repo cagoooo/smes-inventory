@@ -64,19 +64,25 @@
     if (res.status === 401 && window.__SB) {
       console.warn('[gemini-proxy] 401 received, trying to refresh session...');
       try {
-        const { data: { session } } = await window.__SB.auth.refreshSession();
-        if (session?.access_token) {
+        const { data: { session }, error: refreshErr } = await window.__SB.auth.refreshSession();
+        if (!refreshErr && session?.access_token) {
           res = await doFetch(session.access_token);
+        } else {
+          console.warn('[auth-refresh] failed:', refreshErr);
         }
       } catch (e) {
-        console.warn('[auth-refresh]', e);
+        console.warn('[auth-refresh] exception:', e);
       }
     }
 
     if (!res.ok) {
       const err = await res.text().catch(() => '');
       if (res.status === 401) {
-        throw new Error('登入已過期且自動刷新失敗，請重新整理頁面並重新登入 Google 帳號');
+        // 🔑 Refresh 也失敗 → 強制登出 + 跳登入畫面
+        if (window.SMES_AUTH?.handleSessionExpired) {
+          await window.SMES_AUTH.handleSessionExpired('您已久未使用，登入會話過期（Google 登入須每 30 天重新登入一次）');
+        }
+        throw new Error('登入已過期，請重新登入 Google 帳號後再試');
       }
       if (res.status === 429) {
         throw new Error('辨識太頻繁，請稍候 1 分鐘再試');
