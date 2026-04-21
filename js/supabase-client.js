@@ -213,6 +213,25 @@
       return rest('touchscreens?select=*&order=acquired_year.desc,property_number&limit=500');
     },
 
+    // 無線 AP
+    async listWifiAps() {
+      return rest('wifi_aps?select=*&order=ap_code&limit=500');
+    },
+    async updateWifiAp(id, patch) {
+      return rest(`wifi_aps?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(patch)
+      });
+    },
+    async findWifiApByMac(mac) {
+      const clean = String(mac).toUpperCase().replace(/[-:.]/g, '').match(/.{1,2}/g).join(':');
+      return rest(`wifi_aps?mac_address=eq.${encodeURIComponent(clean)}&select=*`);
+    },
+    async findWifiApByCode(code) {
+      return rest(`wifi_aps?ap_code=eq.${encodeURIComponent(code)}&select=*`);
+    },
+
     // Storage
     uploadPhoto,
     publicUrl,

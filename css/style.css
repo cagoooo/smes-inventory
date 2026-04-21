@@ -1982,6 +1982,182 @@ label.btn-capture-inline { cursor: pointer; }
   .ts-advice-detail { font-size: 11.5px; }
 }
 
+/* =========== 📡 無線 AP Tab =========== */
+.ap-alert-banner {
+  background: linear-gradient(135deg, var(--accent-soft), #fff5e5);
+  border: 1.5px solid var(--accent);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ap-alert-item {
+  font-size: 13px;
+  color: #8a5800;
+  line-height: 1.5;
+}
+.ap-alert-item b { color: var(--danger); font-size: 15px; }
+
+.ap-card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-sm);
+  border-left: 4px solid var(--primary);
+}
+.ap-card.ap-unregistered {
+  border-left-color: var(--accent);
+  background: linear-gradient(135deg, var(--accent-soft) 0%, var(--card) 30%);
+}
+.ap-card.ap-no-location {
+  border-left-color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.ap-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.ap-card-title {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+.ap-code {
+  font-family: monospace;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: 0.02em;
+}
+.ap-pn {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-soft);
+  background: var(--bg);
+  padding: 1px 7px;
+  border-radius: 5px;
+}
+.ap-no-pn {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ap-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.ap-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ap-brand {
+  font-weight: 700;
+  color: var(--text);
+}
+.ap-year {
+  color: var(--text-soft);
+  font-size: 11.5px;
+  background: var(--bg);
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+.ap-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.ap-location b {
+  font-family: monospace;
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+.ap-loc-name { color: var(--text-soft); }
+.ap-floor {
+  background: var(--primary-light);
+  color: var(--primary);
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ap-network {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.ap-net-label {
+  min-width: 44px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.ap-network code {
+  background: var(--bg);
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.ap-poe { font-size: 12px; color: var(--text-soft); }
+.ap-warranty {
+  font-size: 11.5px;
+  color: var(--text-soft);
+  padding: 3px 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  display: inline-block;
+  align-self: flex-start;
+}
+.ap-warranty.ap-warn { background: var(--accent-soft); color: var(--accent); }
+.ap-warranty.ap-exp { background: var(--danger-soft); color: var(--danger); font-weight: 700; }
+.ap-source {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.ap-notes {
+  font-size: 11.5px;
+  color: var(--text-soft);
+  background: var(--bg);
+  padding: 5px 8px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .ap-card { padding: 10px 12px; }
+  .ap-code { font-size: 15px; }
+  .ap-meta { font-size: 12px; }
+  .ap-location { font-size: 12px; }
+}
+
 /* =========== Veyon 匯出 & 差異比對 =========== */
 .veyon-export-box {
   background: linear-gradient(135deg, #e5f1ff, #f0f7ff);

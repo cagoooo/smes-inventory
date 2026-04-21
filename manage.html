@@ -11,7 +11,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>石門盤點 · 管理後台</title>
-<link rel="stylesheet" href="css/style.css?v=7.3.7">
+<link rel="stylesheet" href="css/style.css?v=7.3.8">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -68,6 +68,7 @@
     <button data-tab="inv">📦 財產</button>
     <button data-tab="network">🌐 網路</button>
     <button data-tab="touchscreen">🖥 觸屏</button>
+    <button data-tab="wifiap">📡 無線 AP</button>
     <button data-tab="report">📋 盤點報告</button>
     <button data-tab="qr">🏷 QR 標籤</button>
     <button data-tab="import">📥 匯入</button>
@@ -317,6 +318,52 @@
     </div>
   </div>
 
+  <!-- Tab: 無線 AP -->
+  <div class="tab-content" id="tab-wifiap" style="display:none;">
+    <div class="card">
+      <h2>📡 無線網路基地台（84 台）</h2>
+      <p style="font-size:13px;color:var(--text-soft);line-height:1.5;margin:6px 0 14px;">
+        全校 AP 盤點清冊（Extreme AP302W 31 台 / Ruckus R750 7 台 / Ruckus R610 29 台 / NETGEAR 10 台 / 無廠牌 7 台）。
+        未來可拍 AP 上的編號 / MAC / 條碼直接比對更新。
+      </p>
+
+      <!-- KPI -->
+      <div class="kpi-grid" id="wifiapKPI" style="margin-bottom:14px;"></div>
+
+      <!-- 篩選 -->
+      <div class="toolbar-row" style="margin-bottom:10px;">
+        <input id="apSearch" type="text" class="toolbar-input toolbar-grow" placeholder="搜尋 AP 編號 / 教室 / MAC / 條碼 / 型號">
+        <select id="apStatus" class="toolbar-select">
+          <option value="">所有狀態</option>
+          <option value="使用中">✓ 使用中</option>
+          <option value="保固到期">⚠️ 保固到期</option>
+        </select>
+        <select id="apBrand" class="toolbar-select">
+          <option value="">所有型號</option>
+          <option value="Extreme AP 302W">Extreme AP 302W</option>
+          <option value="Ruckus R750">Ruckus R750</option>
+          <option value="Ruckus R610">Ruckus R610</option>
+          <option value="NETGEAR R7800">NETGEAR R7800</option>
+          <option value="無廠牌 無線基地台">無廠牌</option>
+        </select>
+        <select id="apFloor" class="toolbar-select">
+          <option value="">所有樓層</option>
+          <option value="1F">1F</option>
+          <option value="2F">2F</option>
+          <option value="3F">3F</option>
+          <option value="待確認">待確認</option>
+        </select>
+        <button class="btn btn-ghost" onclick="exportWifiApsExcel()">📊 匯出 Excel</button>
+      </div>
+
+      <!-- 警示區 -->
+      <div id="apAlerts" style="margin-bottom:12px;"></div>
+
+      <!-- 清冊 -->
+      <div id="apList"></div>
+    </div>
+  </div>
+
   <!-- Tab: QR 標籤 -->
   <div class="tab-content" id="tab-qr" style="display:none;">
     <div class="card">
@@ -438,24 +485,24 @@
 </div><!-- /appShell -->
 
 <script src="config.js"></script>
-<script src="js/auth.js?v=7.3.7"></script>
-<script src="js/supabase-client.js?v=7.3.7"></script>
-<script src="js/floorplan.js?v=7.3.7"></script>
-<script src="js/dashboard.js?v=7.3.7"></script>
-<script src="js/qr-labels.js?v=7.3.7"></script>
-<script src="js/monthly-report.js?v=7.3.7"></script>
-<script src="js/veyon-export.js?v=7.3.7"></script>
-<script src="js/network-tools.js?v=7.3.7"></script>
-<script src="js/touchscreen-ports.js?v=7.3.7"></script>
-<script src="js/error-monitor.js?v=7.3.7"></script>
-<script src="js/version-check.js?v=7.3.7"></script>
+<script src="js/auth.js?v=7.3.8"></script>
+<script src="js/supabase-client.js?v=7.3.8"></script>
+<script src="js/floorplan.js?v=7.3.8"></script>
+<script src="js/dashboard.js?v=7.3.8"></script>
+<script src="js/qr-labels.js?v=7.3.8"></script>
+<script src="js/monthly-report.js?v=7.3.8"></script>
+<script src="js/veyon-export.js?v=7.3.8"></script>
+<script src="js/network-tools.js?v=7.3.8"></script>
+<script src="js/touchscreen-ports.js?v=7.3.8"></script>
+<script src="js/error-monitor.js?v=7.3.8"></script>
+<script src="js/version-check.js?v=7.3.8"></script>
 <script>
   SMES_AUTH.initClient();
   SMES_AUTH.initSession();
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/manage.js?v=7.3.7';
+      s.src = 'js/manage.js?v=7.3.8';
       document.body.appendChild(s);
     }
   });

@@ -1117,6 +1117,183 @@
     XLSX.writeFile(wb, `石門觸屏_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
+  // ============ Tab: 無線 AP ============
+  let apCache = null;
+
+  async function loadWifiAps() {
+    if (apCache) return apCache;
+    try {
+      apCache = await DB.listWifiAps();
+      return apCache;
+    } catch (e) {
+      console.error('[wifi-aps]', e);
+      return [];
+    }
+  }
+
+  async function renderWifiAps() {
+    const list = await loadWifiAps();
+    if (!list.length) {
+      $('apList').innerHTML = '<div class="empty">📭 尚無 AP 資料</div>';
+      return;
+    }
+
+    // KPI
+    const total = list.length;
+    const inUse = list.filter(a => a.status === '使用中').length;
+    const expired = list.filter(a => a.status === '保固到期').length;
+    const unregistered = list.filter(a => !a.property_number && a.status === '使用中').length;
+    const pending = list.filter(a => !a.classroom_code).length;
+
+    $('wifiapKPI').innerHTML = `
+      <div class="kpi-card"><div class="label">總 AP 數</div><div class="val">${total}</div><div class="sub">台</div></div>
+      <div class="kpi-card success"><div class="label">使用中</div><div class="val">${inUse}</div><div class="sub">台</div></div>
+      <div class="kpi-card danger"><div class="label">保固到期</div><div class="val">${expired}</div><div class="sub">台</div></div>
+      <div class="kpi-card accent"><div class="label">待確認位置</div><div class="val">${pending}</div><div class="sub">台</div></div>
+    `;
+
+    // 警示
+    const alerts = [];
+    if (unregistered > 0) alerts.push(`⚠️ 有 <b>${unregistered}</b> 台新 AP 未登錄財產（R750 五擴案）— 請完成建帳`);
+    if (pending > 0) alerts.push(`📍 有 <b>${pending}</b> 台 R610 位置待巡查確認`);
+    if (expired > 0) alerts.push(`🔴 有 <b>${expired}</b> 台 AP 保固已到期（R610 × 29 + 舊 AP × 17）`);
+    $('apAlerts').innerHTML = alerts.length
+      ? `<div class="ap-alert-banner">${alerts.map(a => `<div class="ap-alert-item">${a}</div>`).join('')}</div>`
+      : '';
+
+    applyApFilter();
+  }
+
+  function applyApFilter() {
+    if (!apCache) return;
+    const kw = ($('apSearch')?.value || '').trim().toLowerCase();
+    const statusFilter = $('apStatus')?.value || '';
+    const brandFilter = $('apBrand')?.value || '';
+    const floorFilter = $('apFloor')?.value || '';
+
+    let list = apCache;
+    if (statusFilter) list = list.filter(a => a.status === statusFilter);
+    if (brandFilter) list = list.filter(a => a.brand_model === brandFilter);
+    if (floorFilter) list = list.filter(a => a.floor === floorFilter);
+    if (kw) list = list.filter(a =>
+      (a.ap_code || '').toLowerCase().includes(kw) ||
+      (a.property_number || '').toLowerCase().includes(kw) ||
+      (a.classroom_code || '').toLowerCase().includes(kw) ||
+      (a.location_name || '').toLowerCase().includes(kw) ||
+      (a.mac_address || '').toLowerCase().includes(kw) ||
+      (a.barcode || '').toLowerCase().includes(kw) ||
+      (a.brand_model || '').toLowerCase().includes(kw)
+    );
+
+    const roomNameMap = Object.fromEntries(cache.rooms.map(r => [r.code, r.name]));
+
+    if (list.length === 0) {
+      $('apList').innerHTML = '<div class="empty">無符合條件</div>';
+      return;
+    }
+
+    $('apList').innerHTML = list.map(a => {
+      const statusClass = a.status === '保固到期' ? 'danger' : a.status === '使用中' ? 'success' : 'accent';
+      const isUnregistered = !a.property_number && a.status === '使用中';
+      const needsLocation = !a.classroom_code;
+
+      const warrantyEnd = a.warranty_end ? new Date(a.warranty_end) : null;
+      const now = new Date();
+      const monthsLeft = warrantyEnd ? Math.round((warrantyEnd - now) / (1000 * 60 * 60 * 24 * 30)) : null;
+
+      return `
+        <div class="ap-card ${isUnregistered ? 'ap-unregistered' : ''} ${needsLocation ? 'ap-no-location' : ''}">
+          <div class="ap-card-head">
+            <div class="ap-card-title">
+              <span class="ap-code">${a.ap_code}</span>
+              ${a.property_number ? `<span class="ap-pn">#${a.property_number}</span>` : '<span class="ap-no-pn">⚠️ 未登錄財產</span>'}
+            </div>
+            <span class="badge badge-${statusClass}">${a.status || '-'}</span>
+          </div>
+          <div class="ap-card-body">
+            <div class="ap-meta">
+              <span class="ap-brand">${a.brand_model || '-'}</span>
+              <span class="ap-year">${a.acquired_year ? a.acquired_year + ' 年' : ''}</span>
+            </div>
+            <div class="ap-location">
+              <span class="ap-loc-icon">📍</span>
+              <b>${a.classroom_code || '(待確認)'}</b>
+              <span class="ap-loc-name">${a.location_name || ''}</span>
+              ${a.floor ? `<span class="ap-floor">${a.floor}</span>` : ''}
+            </div>
+            ${a.mac_address ? `<div class="ap-network">
+              <span class="ap-net-label">MAC</span>
+              <code>${a.mac_address}</code>
+            </div>` : ''}
+            ${a.barcode ? `<div class="ap-network">
+              <span class="ap-net-label">條碼</span>
+              <code>${a.barcode}</code>
+            </div>` : ''}
+            <div class="ap-network">
+              <span class="ap-net-label">PoE</span>
+              <span class="ap-poe">${a.poe_switch || '-'} ${a.poe_port ? '· Port ' + a.poe_port : ''}</span>
+            </div>
+            ${warrantyEnd ? `<div class="ap-warranty ${monthsLeft < 0 ? 'ap-exp' : monthsLeft < 6 ? 'ap-warn' : ''}">
+              保固到 ${warrantyEnd.getFullYear() - 1911}/${String(warrantyEnd.getMonth()+1).padStart(2,'0')}/${String(warrantyEnd.getDate()).padStart(2,'0')}
+              ${monthsLeft < 0 ? `(已過 ${-monthsLeft} 個月)` : `(剩 ${monthsLeft} 個月)`}
+            </div>` : ''}
+            <div class="ap-source">${a.source_plan || ''}</div>
+            ${a.notes ? `<div class="ap-notes">📝 ${a.notes}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  ['apSearch', 'apStatus', 'apBrand', 'apFloor'].forEach(id => {
+    const el = $(id);
+    if (el) {
+      el.addEventListener('input', applyApFilter);
+      el.addEventListener('change', applyApFilter);
+    }
+  });
+
+  $('tabBar').querySelectorAll('button[data-tab="wifiap"]').forEach(b => {
+    b.addEventListener('click', () => renderWifiAps());
+  });
+
+  // Excel 匯出
+  window.exportWifiApsExcel = async () => {
+    const list = await loadWifiAps();
+    if (!list.length) { toast('無資料', 'error'); return; }
+    const roomNameMap = Object.fromEntries(cache.rooms.map(r => [r.code, r.name]));
+    const rows = list.map(a => ({
+      'AP 編號': a.ap_code,
+      '財產序號': a.property_number || '(未登錄)',
+      '樓層': a.floor || '',
+      '教室代碼': a.classroom_code || '',
+      '教室名稱': roomNameMap[a.classroom_code] || a.location_name || '',
+      '空間類型': a.space_type || '',
+      '廠牌型號': a.brand_model || '',
+      '建置年(民國)': a.acquired_year || '',
+      'MAC/IP': a.mac_address || '',
+      'PoE 交換器': a.poe_switch || '',
+      'Port': a.poe_port || '',
+      '保固起始': a.warranty_start || '',
+      '保固到期': a.warranty_end || '',
+      '狀態': a.status || '',
+      '計畫來源': a.source_plan || '',
+      '條碼': a.barcode || '',
+      '備註': a.notes || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 10 }, { wch: 12 }, { wch: 6 }, { wch: 10 }, { wch: 20 },
+      { wch: 12 }, { wch: 18 }, { wch: 10 }, { wch: 18 }, { wch: 18 },
+      { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 22 },
+      { wch: 16 }, { wch: 32 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '無線AP清冊');
+    XLSX.writeFile(wb, `石門無線AP_${new Date().toISOString().slice(0,10)}.xlsx`);
+    toast('✅ 已匯出 ' + rows.length + ' 筆', 'success');
+  };
+
   // ============ Tab: 盤點異動總覽報告 ============
   let reportCache = null;
 
