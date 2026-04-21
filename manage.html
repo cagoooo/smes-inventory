@@ -11,7 +11,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>石門盤點 · 管理後台</title>
-<link rel="stylesheet" href="css/style.css?v=7.3.8">
+<link rel="stylesheet" href="css/style.css?v=7.3.9">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -321,10 +321,10 @@
   <!-- Tab: 無線 AP -->
   <div class="tab-content" id="tab-wifiap" style="display:none;">
     <div class="card">
-      <h2>📡 無線網路基地台（84 台）</h2>
+      <h2>📡 無線網路基地台（85 台）</h2>
       <p style="font-size:13px;color:var(--text-soft);line-height:1.5;margin:6px 0 14px;">
-        全校 AP 盤點清冊（Extreme AP302W 31 台 / Ruckus R750 7 台 / Ruckus R610 29 台 / NETGEAR 10 台 / 無廠牌 7 台）。
-        未來可拍 AP 上的編號 / MAC / 條碼直接比對更新。
+        全校 AP 盤點清冊（Extreme AP302W 31 台 / Ruckus R750 7 台 / Ruckus R610 29 台 / NETGEAR 10 台 / 無廠牌 8 台）。
+        未來可拍 AP 上的編號 / MAC / 條碼直接比對更新。正式財產 32 台、非消耗品 14 台，共 46 台已登錄。
       </p>
 
       <!-- KPI -->
@@ -485,24 +485,24 @@
 </div><!-- /appShell -->
 
 <script src="config.js"></script>
-<script src="js/auth.js?v=7.3.8"></script>
-<script src="js/supabase-client.js?v=7.3.8"></script>
-<script src="js/floorplan.js?v=7.3.8"></script>
-<script src="js/dashboard.js?v=7.3.8"></script>
-<script src="js/qr-labels.js?v=7.3.8"></script>
-<script src="js/monthly-report.js?v=7.3.8"></script>
-<script src="js/veyon-export.js?v=7.3.8"></script>
-<script src="js/network-tools.js?v=7.3.8"></script>
-<script src="js/touchscreen-ports.js?v=7.3.8"></script>
-<script src="js/error-monitor.js?v=7.3.8"></script>
-<script src="js/version-check.js?v=7.3.8"></script>
+<script src="js/auth.js?v=7.3.9"></script>
+<script src="js/supabase-client.js?v=7.3.9"></script>
+<script src="js/floorplan.js?v=7.3.9"></script>
+<script src="js/dashboard.js?v=7.3.9"></script>
+<script src="js/qr-labels.js?v=7.3.9"></script>
+<script src="js/monthly-report.js?v=7.3.9"></script>
+<script src="js/veyon-export.js?v=7.3.9"></script>
+<script src="js/network-tools.js?v=7.3.9"></script>
+<script src="js/touchscreen-ports.js?v=7.3.9"></script>
+<script src="js/error-monitor.js?v=7.3.9"></script>
+<script src="js/version-check.js?v=7.3.9"></script>
 <script>
   SMES_AUTH.initClient();
   SMES_AUTH.initSession();
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/manage.js?v=7.3.8';
+      s.src = 'js/manage.js?v=7.3.9';
       document.body.appendChild(s);
     }
   });

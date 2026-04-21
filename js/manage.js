@@ -1206,7 +1206,11 @@
           <div class="ap-card-head">
             <div class="ap-card-title">
               <span class="ap-code">${a.ap_code}</span>
-              ${a.property_number ? `<span class="ap-pn">#${a.property_number}</span>` : '<span class="ap-no-pn">⚠️ 未登錄財產</span>'}
+              ${a.full_property_number
+                ? `<span class="ap-pn" title="完整財產號">#${a.full_property_number}</span>`
+                : a.property_number
+                  ? `<span class="ap-pn">#${a.property_number}</span>`
+                  : '<span class="ap-no-pn">⚠️ 未登錄財產</span>'}
             </div>
             <span class="badge badge-${statusClass}">${a.status || '-'}</span>
           </div>
@@ -1264,7 +1268,8 @@
     const roomNameMap = Object.fromEntries(cache.rooms.map(r => [r.code, r.name]));
     const rows = list.map(a => ({
       'AP 編號': a.ap_code,
-      '財產序號': a.property_number || '(未登錄)',
+      '財產序號(6位)': a.property_number || '(未登錄)',
+      '完整財產號': a.full_property_number || '',
       '樓層': a.floor || '',
       '教室代碼': a.classroom_code || '',
       '教室名稱': roomNameMap[a.classroom_code] || a.location_name || '',
