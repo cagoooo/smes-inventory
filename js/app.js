@@ -210,17 +210,124 @@
     }
   }
 
+  // 📋 本教室資產清單渲染（展開後顯示所有類型的設備）
+  function renderRoomAssets(inventory, touchscreens, wifiAps) {
+    const details = $('roomAssetsDetails');
+    const body = $('roomAssetsBody');
+    if (!details || !body) return;
+
+    const total = (inventory?.length || 0) + (touchscreens?.length || 0) + (wifiAps?.length || 0);
+    if (total === 0) {
+      details.style.display = 'none';
+      return;
+    }
+    details.style.display = 'block';
+
+    // 主機（列出前幾筆，超過則顯示 "+N 更多"）
+    const inventoryBlock = (inventory && inventory.length > 0) ? `
+      <div class="ra-section">
+        <div class="ra-section-head">
+          <span class="ra-section-icon cat-device">💻</span>
+          <span class="ra-section-title">電腦主機 / 筆電</span>
+          <span class="ra-section-count">${inventory.length} 台</span>
+        </div>
+        <div class="ra-items">
+          ${inventory.slice(0, 10).map(i => `
+            <div class="ra-item">
+              <span class="ra-pn">${i.property_number || '-'}</span>
+              <span class="ra-model">${i.brand || ''} ${i.model || i.item_name || ''}</span>
+              ${i.acquired_year ? `<span class="ra-year">${i.acquired_year}年</span>` : ''}
+            </div>
+          `).join('')}
+          ${inventory.length > 10 ? `<div class="ra-more">+${inventory.length - 10} 台更多</div>` : ''}
+        </div>
+      </div>` : '';
+
+    // 觸屏
+    const touchscreensBlock = (touchscreens && touchscreens.length > 0) ? `
+      <div class="ra-section">
+        <div class="ra-section-head">
+          <span class="ra-section-icon cat-ts">🖥</span>
+          <span class="ra-section-title">觸屏顯示器</span>
+          <span class="ra-section-count">${touchscreens.length} 台</span>
+        </div>
+        <div class="ra-items">
+          ${touchscreens.map(t => `
+            <div class="ra-item">
+              <span class="ra-pn">${t.property_number || '(登帳中)'}</span>
+              <span class="ra-model">${t.brand || ''} ${t.size_inch ? t.size_inch + '吋' : ''} ${t.model_code || ''}</span>
+              ${t.acquired_year ? `<span class="ra-year">${t.acquired_year}年</span>` : ''}
+              ${t.urgency?.includes('★★★') ? '<span class="ra-flag danger">立即汰換</span>' : ''}
+              ${t.urgency?.includes('★★☆') ? '<span class="ra-flag accent">今年到期</span>' : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>` : '';
+
+    // 無線 AP
+    const wifiApsBlock = (wifiAps && wifiAps.length > 0) ? `
+      <div class="ra-section">
+        <div class="ra-section-head">
+          <span class="ra-section-icon cat-ap">📡</span>
+          <span class="ra-section-title">無線網路基地台 (AP)</span>
+          <span class="ra-section-count">${wifiAps.length} 台</span>
+        </div>
+        <div class="ra-items">
+          ${wifiAps.map(a => `
+            <div class="ra-item">
+              <span class="ra-pn ra-ap-code">${a.ap_code}</span>
+              <span class="ra-model">${a.brand_model || ''} ${a.mac_address && !a.mac_address.startsWith('10.') ? '· ' + a.mac_address : ''}</span>
+              ${a.acquired_year ? `<span class="ra-year">${a.acquired_year}年</span>` : ''}
+              ${a.status === '保固到期' ? '<span class="ra-flag danger">保固到期</span>' : ''}
+              ${!a.property_number && a.status === '使用中' ? '<span class="ra-flag accent">未登帳</span>' : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>` : '';
+
+    body.innerHTML = inventoryBlock + touchscreensBlock + wifiApsBlock;
+  }
+
   async function loadRoomRecords() {
     const code = state.currentRoom.code;
     try {
-      const [photos, inventory] = await Promise.all([
+      const [photos, inventory, touchscreens, wifiAps] = await Promise.all([
         window.SMES_DB.listPhotosByRoom(code, 50),
-        window.SMES_DB.listInventoryByRoom(code)
+        window.SMES_DB.listInventoryByRoom(code),
+        window.SMES_DB.listTouchscreensByRoom(code).catch(() => []),
+        window.SMES_DB.listWifiApsByRoom(code).catch(() => [])
       ]);
 
-      $('pillInv').textContent = `📦 ${inventory.length}`;
+      // 快取給詳情頁用
+      state.currentRoomTouchscreens = touchscreens;
+      state.currentRoomWifiAps = wifiAps;
+
+      // 電腦主機/筆電 (過濾掉非電腦類別的設備；通常都是電腦)
+      $('pillInv').textContent = `💻 ${inventory.length}`;
+
+      // 觸屏：有才顯示
+      const tsPill = $('pillTouchscreen');
+      if (touchscreens.length > 0) {
+        tsPill.textContent = `🖥 ${touchscreens.length}`;
+        tsPill.style.display = 'inline-flex';
+      } else {
+        tsPill.style.display = 'none';
+      }
+
+      // 無線 AP：有才顯示
+      const apPill = $('pillWifiAp');
+      if (wifiAps.length > 0) {
+        apPill.textContent = `📡 ${wifiAps.length}`;
+        apPill.style.display = 'inline-flex';
+      } else {
+        apPill.style.display = 'none';
+      }
+
       $('pillPhoto').textContent = `📷 ${photos.length}`;
       $('roomRecordCount').textContent = `(${photos.length})`;
+
+      // 本教室資產清單展開區塊
+      renderRoomAssets(inventory, touchscreens, wifiAps);
 
       // 本教室進度條：photos / inventory
       const pct = inventory.length > 0 ? Math.min(100, Math.round(photos.length / inventory.length * 100)) : 0;

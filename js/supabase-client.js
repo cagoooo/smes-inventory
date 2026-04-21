@@ -212,10 +212,16 @@
     async listTouchscreens() {
       return rest('touchscreens?select=*&order=acquired_year.desc,property_number&limit=500');
     },
+    async listTouchscreensByRoom(code) {
+      return rest(`touchscreens?classroom_code=eq.${encodeURIComponent(code)}&select=*&order=property_number`);
+    },
 
     // 無線 AP
     async listWifiAps() {
       return rest('wifi_aps?select=*&order=ap_code&limit=500');
+    },
+    async listWifiApsByRoom(code) {
+      return rest(`wifi_aps?classroom_code=eq.${encodeURIComponent(code)}&select=*&order=ap_code`);
     },
     async updateWifiAp(id, patch) {
       return rest(`wifi_aps?id=eq.${id}`, {

@@ -12,7 +12,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>石門盤點</title>
-<link rel="stylesheet" href="css/style.css?v=7.3.9">
+<link rel="stylesheet" href="css/style.css?v=7.4.0">
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -129,8 +129,10 @@
         <div class="meta">
           <span class="pill" id="pillCode">-</span>
           <span class="pill" id="pillFloor">-</span>
-          <span class="pill" id="pillInv">📦 -</span>
-          <span class="pill" id="pillPhoto">📷 -</span>
+          <span class="pill" id="pillInv" title="電腦主機/筆電">💻 -</span>
+          <span class="pill" id="pillTouchscreen" title="觸屏顯示器" style="display:none;">🖥 -</span>
+          <span class="pill" id="pillWifiAp" title="無線 AP 基地台" style="display:none;">📡 -</span>
+          <span class="pill" id="pillPhoto" title="本教室已拍攝的照片數">📷 -</span>
         </div>
       </div>
       <button class="change-btn" onclick="openRoomSheet()">↻ 換教室</button>
@@ -146,6 +148,15 @@
         <div class="progress-fill start" id="roomProgressBar" style="width:0%"></div>
       </div>
     </div>
+
+    <!-- 本教室資產清單（可展開）-->
+    <details id="roomAssetsDetails" class="room-assets-details" style="display:none;">
+      <summary class="room-assets-summary">
+        <span class="ra-title">📋 本教室資產清單</span>
+        <span class="ra-toggle-icon">›</span>
+      </summary>
+      <div class="room-assets-body" id="roomAssetsBody"></div>
+    </details>
 
     <!-- 連續拍照模式開關 -->
     <div class="mode-toggle">
@@ -440,15 +451,15 @@
 
 </div><!-- /appShell -->
 
-<script src="config.js?v=7.3.9"></script>
-<script src="js/auth.js?v=7.3.9"></script>
-<script src="js/supabase-client.js?v=7.3.9"></script>
-<script src="js/offline.js?v=7.3.9"></script>
-<script src="js/camera.js?v=7.3.9"></script>
-<script src="js/gemini.js?v=7.3.9"></script>
-<script src="js/floorplan.js?v=7.3.9"></script>
-<script src="js/error-monitor.js?v=7.3.9"></script>
-<script src="js/version-check.js?v=7.3.9"></script>
+<script src="config.js?v=7.4.0"></script>
+<script src="js/auth.js?v=7.4.0"></script>
+<script src="js/supabase-client.js?v=7.4.0"></script>
+<script src="js/offline.js?v=7.4.0"></script>
+<script src="js/camera.js?v=7.4.0"></script>
+<script src="js/gemini.js?v=7.4.0"></script>
+<script src="js/floorplan.js?v=7.4.0"></script>
+<script src="js/error-monitor.js?v=7.4.0"></script>
+<script src="js/version-check.js?v=7.4.0"></script>
 <script>
   // 註冊 Service Worker（Cache-first + 背景同步）
   if ('serviceWorker' in navigator) {
@@ -466,7 +477,7 @@
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/app.js?v=7.3.9';
+      s.src = 'js/app.js?v=7.4.0';
       document.body.appendChild(s);
     }
   });
