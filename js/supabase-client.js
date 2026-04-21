@@ -225,6 +225,14 @@
     async findTouchscreenByPN(pn) {
       return rest(`touchscreens?property_number=eq.${encodeURIComponent(pn)}&select=*&limit=3`);
     },
+    async insertTouchscreen(item) {
+      const rows = await rest('touchscreens', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(item)
+      });
+      return rows[0];
+    },
 
     // 無線 AP
     async listWifiAps() {
@@ -265,6 +273,23 @@
     },
     async findWifiApByCode(code) {
       return rest(`wifi_aps?ap_code=eq.${encodeURIComponent(code)}&select=*`);
+    },
+    async insertWifiAp(item) {
+      const rows = await rest('wifi_aps', {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(item)
+      });
+      return rows[0];
+    },
+    // 取得最大的「新-XXX」流水號，產出下一個
+    async nextNewApCode() {
+      const rows = await rest(`wifi_aps?ap_code=ilike.${encodeURIComponent('新-%')}&select=ap_code&order=ap_code.desc&limit=1`);
+      if (!rows.length) return '新-001';
+      const last = rows[0].ap_code;  // 例：'新-007'
+      const m = last.match(/新-(\d+)/);
+      const n = m ? parseInt(m[1]) + 1 : 1;
+      return '新-' + String(n).padStart(3, '0');
     },
 
     // Storage

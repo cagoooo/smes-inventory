@@ -1244,31 +1244,68 @@ ${hasMatch ? `
     state.lastPNNoMatch = pnNoMatch;
 
     if (candidates.length === 0) {
-      // 沒有對應，若 AI 有辨識到財產號 → 提供「新增」+ 警告可能辨識錯誤
+      // 沒有對應 → 分析 AI 回傳資料，智慧建議該新增為哪種資產類型
       const hasPN = !!p.property_number;
+      const suggestedType = inferAssetType(p);  // 'wifi_ap' / 'touchscreen' / 'inventory'
+
+      const primaryBtn = ({
+        wifi_ap: `<button type="button" class="btn btn-primary ab-ap-btn" onclick="createWifiApFromDetection()">➕ 新增為 📡 無線 AP</button>`,
+        touchscreen: `<button type="button" class="btn btn-primary ab-ts-btn" onclick="createTouchscreenFromDetection()">➕ 新增為 🖥 觸屏顯示器</button>`,
+        inventory: `<button type="button" class="btn btn-primary" onclick="createInventoryFromDetection()">➕ 新增為 💻 電腦主機/財產</button>`,
+      })[suggestedType];
+
+      // 次要選項：其他 2 種
+      const otherTypes = ['inventory', 'touchscreen', 'wifi_ap'].filter(t => t !== suggestedType);
+      const otherBtns = otherTypes.map(t => ({
+        wifi_ap: `<button type="button" class="btn btn-ghost ab-ap-btn" onclick="createWifiApFromDetection()">📡 AP</button>`,
+        touchscreen: `<button type="button" class="btn btn-ghost ab-ts-btn" onclick="createTouchscreenFromDetection()">🖥 觸屏</button>`,
+        inventory: `<button type="button" class="btn btn-ghost" onclick="createInventoryFromDetection()">💻 電腦/財產</button>`,
+      })[t]).join('');
+
+      const typeHint = {
+        wifi_ap: 'AI 認出是無線 AP（Extreme/Ruckus/NETGEAR 等品牌）',
+        touchscreen: 'AI 認出是觸屏（JECTOR/創源 或尺寸較大）',
+        inventory: 'AI 認為是一般設備（電腦/螢幕/印表機等）',
+      }[suggestedType];
+
       if (hasPN) {
         area.innerHTML = `<div class="match-banner warn">
           ⚠️ <span class="count">AI 認出 <b>#${p.property_number}</b>，但清冊中找不到這筆</span>
         </div>
         <div class="ocr-warn-box">
-          <div class="ocr-warn-title">🤔 可能原因（由可能性高到低）：</div>
+          <div class="ocr-warn-title">🤔 可能原因 + 處理方式</div>
           <ol class="ocr-warn-list">
-            <li><b>AI 辨識錯誤</b> — 財產號常見混淆：<code>1↔7 / 0↔O / B↔8 / 5↔S / 2↔Z</code>。請檢查上方「財產編號」欄位是否正確，必要時手動修正</li>
-            <li><b>新購機</b>尚未登錄 → 按下方「➕ 新增」按鈕</li>
-            <li><b>舊清冊未匯入</b>（例：今年剛接手管理）</li>
+            <li><b>AI 辨識錯誤</b> — 常見混淆：<code>1↔7 / 0↔O / B↔8 / 5↔S</code>。請檢查上方財產號欄位</li>
+            <li><b>新設備尚未登錄</b> → 系統自動建立新紀錄</li>
+            <li><b>財產從未匯入</b>（常見於舊 AP、非消耗品）</li>
           </ol>
-          <div class="ocr-warn-actions">
-            <button type="button" class="btn btn-ghost" onclick="focusPropertyNumber()">
-              ✏️ 我要修正財產編號
-            </button>
-            <button type="button" class="btn btn-primary" onclick="createInventoryFromDetection()">
-              ➕ 確認是新財產（#${p.property_number}）
-            </button>
+          <div class="smart-type-suggest">
+            <div class="sts-hint">💡 ${typeHint}</div>
+            <div class="ocr-warn-actions">
+              <button type="button" class="btn btn-ghost" onclick="focusPropertyNumber()">
+                ✏️ 修正財產編號
+              </button>
+              ${primaryBtn}
+            </div>
+            <div class="sts-other-types">
+              <span class="sts-other-label">或新增為：</span>
+              ${otherBtns}
+            </div>
           </div>
         </div>`;
       } else {
         area.innerHTML = `<div class="match-banner none">
-          🔍 <span class="count">找不到對應的既有財產 — AI 未讀到財產號，請手動填寫或按「新增為新財產」</span>
+          🔍 <span class="count">AI 未讀到財產號 — 若這台設備沒在清冊中，可手動新增</span>
+        </div>
+        <div class="smart-type-suggest">
+          <div class="sts-hint">💡 ${typeHint}</div>
+          <div class="ocr-warn-actions">
+            ${primaryBtn}
+          </div>
+          <div class="sts-other-types">
+            <span class="sts-other-label">或新增為：</span>
+            ${otherBtns}
+          </div>
         </div>`;
       }
       return;
@@ -1506,6 +1543,182 @@ ${hasMatch ? `
       if (aiVal !== '') field.classList.add('auto-detected');
     }
   });
+
+  // ========== 🎯 資產類型推論（決定「新增」按鈕該指向哪個 table）==========
+  function inferAssetType(p) {
+    if (!p) return 'inventory';
+    const brand = (p.brand || '').toLowerCase();
+    const model = (p.model || '').toLowerCase();
+    const pn = (p.property_number || '').trim();
+    const photoType = p.photo_type || '';
+
+    // AP 線索
+    if (/extreme|ruckus|netgear/i.test(p.brand || '')) return 'wifi_ap';
+    if (/^(AP\d+|R610-\d+|舊AP-\d+)$/i.test(pn)) return 'wifi_ap';
+    if (pn.startsWith('6011417-') || pn.startsWith('6011428-')) return 'wifi_ap';
+    if (/ap302w|r750|r610|r7800|access\s*point|wifi|無線基地台|基地台/i.test((p.brand || '') + ' ' + (p.model || '') + ' ' + (p.notes || ''))) return 'wifi_ap';
+    if (photoType === '網通設備') return 'wifi_ap';
+
+    // 觸屏線索
+    if (/jector|創源/i.test(p.brand || '')) return 'touchscreen';
+    if (/\d+\s*吋|fm-[cv]\d|kta-pro|互動式觸控|觸控螢幕|觸屏/i.test((p.model || '') + ' ' + (p.notes || ''))) return 'touchscreen';
+    if (photoType === '螢幕' && /\d+/.test(model)) {
+      // 若型號含大尺寸數字 → 可能觸屏
+      const m = model.match(/(\d+)/);
+      if (m && parseInt(m[1]) >= 55) return 'touchscreen';
+    }
+
+    // 其他 → 一般財產
+    return 'inventory';
+  }
+
+  // ========== ➕ 新增為新觸屏 ==========
+  window.createTouchscreenFromDetection = async () => {
+    const p = state.lastDetection?.parsed;
+    if (!p) { toast('缺少 AI 辨識資料', 'error'); return; }
+    if (!state.currentRoom) { toast('未選教室', 'error'); return; }
+
+    const formVal = id => $(id).querySelector('input,select,textarea').value.trim() || null;
+    const pn = p.property_number || formVal('f_property_number');
+    const brand = formVal('f_brand') || p.brand;
+    const model = formVal('f_model') || p.model;
+    const rocYear = formVal('f_roc_year') || p.roc_year;
+
+    // 從 model/notes 推尺寸
+    const sizeMatch = (model + ' ' + (p.notes || '')).match(/(\d{2,3})\s*吋/);
+    const sizeInch = sizeMatch ? parseInt(sizeMatch[1]) : null;
+
+    const msg = `確認新增新觸屏？
+
+📋 資料預覽：
+・廠牌：${brand || '(空)'}
+・型號：${model || '(空)'}
+・尺寸：${sizeInch ? sizeInch + '吋' : '(未知)'}
+・財產號：${pn || '(登帳中)'}
+・民國年：${rocYear || '(空)'}
+・教室：${state.currentRoom.code} ${state.currentRoom.name}
+
+會寫入 🖥 touchscreens 清冊表。`;
+    if (!confirm(msg)) return;
+
+    try {
+      const item = {
+        property_number: pn || null,
+        brand: brand || '(待確認)',
+        model_code: model || null,
+        model_description: p.model || null,
+        size_inch: sizeInch,
+        classroom_code: state.currentRoom.code,
+        location_text: state.currentRoom.code,
+        acquired_year: rocYear ? parseInt(rocYear) : null,
+        status: 'active',
+        urgency: '✓ 正常使用',
+        supports_hdmi: true,
+        supports_dp: true,
+        supports_vga: false,
+        dms_compatible: /jector/i.test(brand) ? '相容' : '不適用',
+        notes: `拍照自動新增（${state.currentRoom.code} ${state.currentRoom.name}）`
+      };
+      const row = await window.SMES_DB.insertTouchscreen(item);
+      toast(`✅ 已新增觸屏到 ${state.currentRoom.code} 教室`, 'success');
+      // 重新查 match（這次應該會找到剛新增的那筆）
+      await showMatchSuggestions(p);
+      // 自動選中新建的那筆
+      setTimeout(() => {
+        const el = document.querySelector(`.match-suggest[data-id="${row.id}"][data-type="touchscreen"]`);
+        if (el) { el.classList.add('selected'); renderInventoryDiff({ ...row, _type: 'touchscreen' }); }
+      }, 150);
+    } catch (e) {
+      toast('新增失敗: ' + e.message, 'error');
+      console.error(e);
+    }
+  };
+
+  // ========== ➕ 新增為新 AP ==========
+  window.createWifiApFromDetection = async () => {
+    const p = state.lastDetection?.parsed;
+    if (!p) { toast('缺少 AI 辨識資料', 'error'); return; }
+    if (!state.currentRoom) { toast('未選教室', 'error'); return; }
+
+    const formVal = id => $(id).querySelector('input,select,textarea').value.trim() || null;
+    const pn = p.property_number || formVal('f_property_number');
+    const brand = formVal('f_brand') || p.brand;
+    const model = formVal('f_model') || p.model;
+    const rocYear = formVal('f_roc_year') || p.roc_year;
+    const serial = formVal('f_serial_number') || p.serial_number;
+
+    // 若 AI 讀到的 PN 本身是 AP 編號格式，用它當 ap_code
+    let apCode;
+    if (pn && /^(AP\d+|R610-\d+|舊AP-\d+|新-\d+)$/i.test(pn)) {
+      apCode = pn.toUpperCase().replace(/舊ap/i, '舊AP');
+    } else {
+      // 自動產生「新-XXX」編號
+      try {
+        apCode = await window.SMES_DB.nextNewApCode();
+      } catch (e) {
+        apCode = '新-' + Date.now().toString().slice(-6);
+      }
+    }
+
+    // brand_model 組合
+    const brandModel = [brand, model].filter(Boolean).join(' ').trim() || '(待確認型號)';
+
+    // 判斷是否 MAC（AI 可能把 MAC 填到 serial 或 notes）
+    let mac = null;
+    const combined = (serial || '') + ' ' + (p.notes || '');
+    const macMatch = combined.match(/([0-9A-F]{2}[:\-.]){5}[0-9A-F]{2}/i);
+    if (macMatch) mac = macMatch[0].toUpperCase().replace(/[-.]/g, ':');
+
+    // 判斷是否含完整財產號（6011417-XXXXXX 等）
+    let fullPN = null;
+    const fullPNMatch = (pn || '').match(/(\d{7}[-\s]\d{2}\s+\d{6}|\d{7}-\d{6})/);
+    if (fullPNMatch) fullPN = fullPNMatch[1];
+
+    const msg = `確認新增新 AP？
+
+📋 資料預覽：
+・AP 編號：${apCode}${apCode.startsWith('新-') ? ' (系統自動產生)' : ''}
+・廠牌型號：${brandModel}
+・財產號：${pn && !/^(AP\d+|R610-|舊AP-)/i.test(pn) ? pn : '(未登錄)'}
+・MAC：${mac || '(未辨識)'}
+・教室：${state.currentRoom.code} ${state.currentRoom.name}
+・民國年：${rocYear || '(空)'}
+
+會寫入 📡 wifi_aps 清冊表。`;
+    if (!confirm(msg)) return;
+
+    try {
+      const item = {
+        ap_code: apCode,
+        property_number: (pn && !/^(AP\d+|R610-\d+|舊AP-\d+|新-)/i.test(pn)) ? pn : null,
+        full_property_number: fullPN,
+        floor: state.currentRoom.floor === 0 ? null : state.currentRoom.floor + 'F',
+        classroom_code: state.currentRoom.code,
+        location_name: state.currentRoom.name,
+        space_type: null,
+        brand_model: brandModel,
+        acquired_year: rocYear ? parseInt(rocYear) : null,
+        mac_address: mac,
+        poe_switch: null,
+        poe_port: null,
+        warranty_start: null,
+        warranty_end: null,
+        status: '使用中',
+        source_plan: '拍照盤點新增',
+        notes: `拍照自動新增（${state.currentRoom.code} ${state.currentRoom.name}）` + (p.notes ? '；' + p.notes : '')
+      };
+      const row = await window.SMES_DB.insertWifiAp(item);
+      toast(`✅ 已新增 AP (${apCode}) 到 ${state.currentRoom.code}`, 'success');
+      await showMatchSuggestions(p);
+      setTimeout(() => {
+        const el = document.querySelector(`.match-suggest[data-id="${row.id}"][data-type="wifi_ap"]`);
+        if (el) { el.classList.add('selected'); renderInventoryDiff({ ...row, _type: 'wifi_ap' }); }
+      }, 150);
+    } catch (e) {
+      toast('新增失敗: ' + e.message, 'error');
+      console.error(e);
+    }
+  };
 
   // ========== 新增為新財產（AI 辨識到財產號但沒對應到清冊）==========
   window.createInventoryFromDetection = async () => {
