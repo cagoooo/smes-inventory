@@ -1164,9 +1164,22 @@ ${hasMatch ? `
     let matchMethod = '';  // 'exact' / 'fuzzy_ocr' / 'fuzzy_all' / 'model' / 'cross_asset'
     let pnNoMatch = false;
 
+    // 🔍 Step -1: 先從 AI 內容抽出 AP 編號（AP-133/R610-01 等），優先查 wifi_aps
+    const apCode = extractApCode(p);
+    if (apCode) {
+      try {
+        const aps = await window.SMES_DB.findWifiApByCode(apCode);
+        if (aps && aps.length > 0) {
+          candidates = aps.map(x => ({ ...x, _type: 'wifi_ap' }));
+          matchMethod = 'ap_code';
+          state.extractedApCode = apCode;
+        }
+      } catch (e) { console.warn('[ap_code match]', e); }
+    }
+
     // 🎯 Step 0: 跨 3 表搜尋（inventory + touchscreens + wifi_aps）
     // 讓觸屏拍照、AP 拍照也能自動比對到正確 table
-    if (p.property_number) {
+    if (candidates.length === 0 && p.property_number) {
       const pn = p.property_number.trim();
       try {
         const cross = await window.SMES_DB.searchAssetsByPN(pn);
@@ -1544,6 +1557,47 @@ ${hasMatch ? `
     }
   });
 
+  // ========== 🔍 從 AI 辨識內容抽出 AP 編號 ==========
+  // 支援多種輸入格式：
+  //   XS114-SMES-AP-133  → AP133
+  //   AP-133             → AP133
+  //   AP133              → AP133
+  //   R610-01            → R610-01
+  //   舊AP-01            → 舊AP-01
+  //   AP131              → AP131
+  function extractApCode(p) {
+    if (!p) return null;
+    // 把所有 AI 可能放編號的欄位合併掃一次
+    const fields = [
+      p.property_number,
+      p.model,
+      p.brand,
+      p.serial_number,
+      p.notes,
+    ].filter(Boolean).map(String);
+    const combined = fields.join(' ');
+
+    // 先檢查優先級高的 pattern
+    // 1. 完整 SMES-AP 標籤 (最精確)
+    let m = combined.match(/SMES[-_\s]*AP[-_\s]*(\d{1,4})/i);
+    if (m) return `AP${m[1]}`;
+
+    // 2. R610-XX (二位數)
+    m = combined.match(/R610[-_\s]*(\d{1,3})/i);
+    if (m) return `R610-${String(m[1]).padStart(2, '0')}`;
+
+    // 3. 舊AP-XX
+    m = combined.match(/舊\s*AP[-_\s]*(\d{1,3})/i);
+    if (m) return `舊AP-${String(m[1]).padStart(2, '0')}`;
+
+    // 4. 單純 AP + 數字（最寬鬆，放最後）
+    // 避免誤抓：要求前後是邊界（開頭/空白/非英數）
+    m = combined.match(/(?:^|[^A-Za-z0-9])AP[-_\s]*(\d{1,4})(?:$|[^A-Za-z0-9])/i);
+    if (m) return `AP${m[1]}`;
+
+    return null;
+  }
+
   // ========== 🎯 資產類型推論（決定「新增」按鈕該指向哪個 table）==========
   function inferAssetType(p) {
     if (!p) return 'inventory';
@@ -1647,21 +1701,35 @@ ${hasMatch ? `
     const rocYear = formVal('f_roc_year') || p.roc_year;
     const serial = formVal('f_serial_number') || p.serial_number;
 
-    // 若 AI 讀到的 PN 本身是 AP 編號格式，用它當 ap_code
-    let apCode;
-    if (pn && /^(AP\d+|R610-\d+|舊AP-\d+|新-\d+)$/i.test(pn)) {
-      apCode = pn.toUpperCase().replace(/舊ap/i, '舊AP');
-    } else {
-      // 自動產生「新-XXX」編號
-      try {
-        apCode = await window.SMES_DB.nextNewApCode();
-      } catch (e) {
-        apCode = '新-' + Date.now().toString().slice(-6);
+    // 🔍 優先從 AI 回傳內容抽出 AP 編號 (支援 XS114-SMES-AP-133 → AP133)
+    let apCode = extractApCode(p);
+    if (!apCode) {
+      // 次選：若 PN 直接是 AP 格式
+      if (pn && /^(AP\d+|R610-\d+|舊AP-\d+|新-\d+)$/i.test(pn)) {
+        apCode = pn.toUpperCase().replace(/舊ap/i, '舊AP');
+      } else {
+        // 最後：自動產生「新-XXX」流水號
+        try {
+          apCode = await window.SMES_DB.nextNewApCode();
+        } catch (e) {
+          apCode = '新-' + Date.now().toString().slice(-6);
+        }
       }
     }
 
-    // brand_model 組合
-    const brandModel = [brand, model].filter(Boolean).join(' ').trim() || '(待確認型號)';
+    // brand_model 組合 — 清掉貼紙格式 (XS114-SMES-AP-133) 避免變成型號
+    const stripLabel = s => String(s || '')
+      .replace(/XS\d+[-_\s]*SMES[-_\s]*AP[-_\s]*\d+/ig, '')
+      .replace(/SMES[-_\s]*AP[-_\s]*\d+/ig, '')
+      .replace(/AP[-_\s]*\d{2,4}\b/ig, '')
+      .trim();
+    const cleanBrand = stripLabel(brand);
+    const cleanModel = stripLabel(model);
+    const brandModel = [cleanBrand, cleanModel].filter(Boolean).join(' ').trim() || '(待確認型號)';
+
+    // 原始貼紙文字存到 notes 備查
+    const originalLabelText = [p.property_number, p.model].filter(Boolean)
+      .map(String).find(s => /XS\d+|SMES-AP/i.test(s)) || '';
 
     // 判斷是否 MAC（AI 可能把 MAC 填到 serial 或 notes）
     let mac = null;
@@ -1674,15 +1742,29 @@ ${hasMatch ? `
     const fullPNMatch = (pn || '').match(/(\d{7}[-\s]\d{2}\s+\d{6}|\d{7}-\d{6})/);
     if (fullPNMatch) fullPN = fullPNMatch[1];
 
+    // 判斷編號來源
+    let apCodeHint;
+    const extracted = extractApCode(p);
+    if (extracted && apCode === extracted) {
+      apCodeHint = ' (從貼紙抽出)';
+    } else if (apCode.startsWith('新-')) {
+      apCodeHint = ' (系統自動產生)';
+    } else {
+      apCodeHint = '';
+    }
+    // 原始貼紙文字（供 fallback 參考）
+    const originalLabel = [p.property_number, p.model, p.notes].filter(Boolean).join(' · ').slice(0, 60);
+
     const msg = `確認新增新 AP？
 
 📋 資料預覽：
-・AP 編號：${apCode}${apCode.startsWith('新-') ? ' (系統自動產生)' : ''}
+・AP 編號：${apCode}${apCodeHint}
 ・廠牌型號：${brandModel}
-・財產號：${pn && !/^(AP\d+|R610-|舊AP-)/i.test(pn) ? pn : '(未登錄)'}
+・財產號：${pn && !/^(AP\d+|R610-|舊AP-|XS\d)/i.test(pn) ? pn : '(未登錄)'}
 ・MAC：${mac || '(未辨識)'}
 ・教室：${state.currentRoom.code} ${state.currentRoom.name}
 ・民國年：${rocYear || '(空)'}
+${originalLabel ? '・原始標籤：' + originalLabel : ''}
 
 會寫入 📡 wifi_aps 清冊表。`;
     if (!confirm(msg)) return;
@@ -1705,7 +1787,9 @@ ${hasMatch ? `
         warranty_end: null,
         status: '使用中',
         source_plan: '拍照盤點新增',
-        notes: `拍照自動新增（${state.currentRoom.code} ${state.currentRoom.name}）` + (p.notes ? '；' + p.notes : '')
+        notes: `拍照自動新增（${state.currentRoom.code} ${state.currentRoom.name}）`
+          + (originalLabelText ? `；原始貼紙「${originalLabelText}」` : '')
+          + (p.notes && p.notes !== originalLabelText ? '；' + p.notes : '')
       };
       const row = await window.SMES_DB.insertWifiAp(item);
       toast(`✅ 已新增 AP (${apCode}) 到 ${state.currentRoom.code}`, 'success');

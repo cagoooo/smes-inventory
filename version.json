@@ -1,5 +1,5 @@
 {
-  "version": "v7.4.6",
-  "build": "2026-04-19b",
-  "notes": "修復 Gemini JSON 格式錯誤：改用範例 prompt + 容錯解析"
+  "version": "v7.4.7",
+  "build": "2026-04-19c",
+  "notes": "AP 貼紙智慧抽取：XS114-SMES-AP-133 → AP133 自動對應"
 }
