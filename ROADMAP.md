@@ -1,7 +1,7 @@
 # 📍 石門盤點系統 · 產品 Roadmap
 
 > 最後更新：2026-04-24
-> 目前版本：**v7.4.10 — 修 Gemini thinking mode JSON 截斷 + 錯誤分類避免誤登出 + 完整三表跨類型拍照辨識 + 防雷 SKILLS 建置**
+> 目前版本：**v7.4.12 — 防雷自動化全面啟動(本地 deploy.sh + CI smoke test 每日巡檢模型可用性)**
 > 部署網址：https://cagoooo.github.io/smes-inventory/
 > **登入系統已完成實測，任何非 `@mail2.smes.tyc.edu.tw` 帳號會被自動登出**
 >
@@ -51,7 +51,8 @@
 | v7.4.10 | 04-21 | 關閉 Gemini 2.5 thinking mode（`thinkingBudget: 0`）+ maxOutputTokens 2048 防 JSON 截斷 | 0.25h |
 | **SKILLS** | 04-21 | 永久防雷：`supabase-secrets-for-browser-apis`(新)、`gemini-api-integration`(+雷 #9) | 1h |
 | v7.4.11 | 04-24 | **A1+A2 觀測性**：AI 來源 chip(🤖/🔀/⚠️) + finishReason log + tokens 統計 + MAX_TOKENS 自動警示 | 1h |
-| **現況** | | **~53.25 小時內打造完整學校資訊管理系統 + 防雷 SKILLS 生態 + 觀測性基建** | **~53.25h** |
+| v7.4.12 | 04-24 | **B1+B2 防雷自動化**:`deploy.sh` 本地部署前檢查(ListModels / generateContent / 版本一致) + GitHub Actions 每日 smoke test + DEPLOY.md 完整設定文件 | 1.5h |
+| **現況** | | **~54.75 小時內打造完整學校資訊管理系統 + 防雷 SKILLS 生態 + 觀測性 + 自動 CI 守門** | **~54.75h** |
 
 ---
 
@@ -708,12 +709,12 @@ app.js 在 updateInventoryItem 前先 INSERT log → DB 層或 app 層都可。
 
 ### 🟡 B. 防雷自動化(Preventive,~3h,**每次部署自動跑**)
 
-| 任務 | 價值 | 難度 | 估時 | 描述 |
-|:---|:---:|:---:|:---:|:---|
-| **部署前腳本自動跑 ListModels** | ★★★★★ | 易 | 0.5h | `deploy.sh` 加一步:打 ListModels 確認 `gemini-2.5-flash` 還在,不在就擋部署 |
-| **部署後 smoke test** | ★★★★★ | 易 | 1h | GitHub Actions 加 e2e:打一張測試照片到生產環境 → 檢查回傳的 JSON source 是 'gemini' 不是 'fallback' |
-| **Supabase quota 監控** | ★★★★ | 中 | 1h | 每週跑一次 `get_advisors` + DB size 檢查,快超額度時 LINE 通知(用既有 `line-messaging-firebase` skill) |
-| **App secrets 自動 rotate 腳本** | ★★★ | 中 | 0.5h | 寫 SQL 一條指令可以換 Gemini key 並印出 UPDATE 時間 |
+| 任務 | 價值 | 難度 | 估時 | 狀態 | 描述 |
+|:---|:---:|:---:|:---:|:---:|:---|
+| **部署前腳本自動跑 ListModels** | ★★★★★ | 易 | 0.5h | ✅ **v7.4.12 完成** | `deploy.sh` 本地跑:讀 config.js 抽 GEMINI_MODEL → 打 ListModels 確認 → 實測 generateContent → 驗證版本一致 → 互動式 git push。加 `--dry-run` / `--skip-test` 旗標 |
+| **部署後 smoke test** | ★★★★★ | 易 | 1h | ✅ **v7.4.12 完成** | `.github/workflows/gemini-smoke-test.yml`:push 時 + 每天 UTC 01:00(台灣 09:00)+ 手動觸發。ListModels + generateContent + finishReason=STOP 驗證,失敗顯示紅色 ❌ |
+| **Supabase quota 監控** | ★★★★ | 中 | 1h | 🔜 待辦 | 每週跑一次 `get_advisors` + DB size 檢查,快超額度時 LINE 通知(用既有 `line-messaging-firebase` skill) |
+| **App secrets 自動 rotate 腳本** | ★★★ | 中 | 0.5h | 🔜 待辦 | 寫 SQL 一條指令可以換 Gemini key 並印出 UPDATE 時間 |
 
 ### 🟢 C. 錯誤恢復力(Resilience,~5h,**學到的錯誤分類觀念制度化**)
 

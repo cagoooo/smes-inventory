@@ -1,0 +1,165 @@
+name: Gemini Smoke Test
+
+# ============================================================================
+# 自動驗證當下用的 Gemini 模型還活著 + generateContent API 正常。
+# 觸發:
+#   - Push 到 main 且動到 Gemini 相關檔案
+#   - 每天 UTC 01:00 (台灣早上 9 點) 定時跑,提早發現模型棄用
+#   - 手動觸發
+#
+# 前置:
+#   在 Repo Settings → Secrets and variables → Actions 新增:
+#     GEMINI_API_KEY = AIzaSy...(從 Supabase app_secrets 取得)
+# ============================================================================
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'js/gemini.js'
+      - 'js/app.js'
+      - 'config.js'
+      - 'version.json'
+      - 'deploy.sh'
+      - '.github/workflows/gemini-smoke-test.yml'
+  workflow_dispatch:
+  schedule:
+    # UTC 01:00 = 台灣 09:00,每天早上巡一次
+    - cron: '0 1 * * *'
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify GEMINI_API_KEY secret exists
+        run: |
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "::error::GEMINI_API_KEY secret 未設定"
+            echo "請到 Repo Settings → Secrets and variables → Actions 新增 GEMINI_API_KEY"
+            echo "值可從 Supabase app_secrets 表取得(SELECT value FROM app_secrets WHERE key='gemini_api_key')"
+            exit 1
+          fi
+          echo "✅ Secret 已設定"
+
+      - name: Extract current model from config.js
+        id: model
+        run: |
+          MODEL=$(grep -oE "GEMINI_MODEL:[[:space:]]*'[^']+'" config.js | sed "s/GEMINI_MODEL:[[:space:]]*'//;s/'//" || echo "gemini-2.5-flash")
+          echo "current_model=$MODEL" >> $GITHUB_OUTPUT
+          echo "📌 當下設定模型: $MODEL"
+
+      - name: ListModels — 模型還活著?
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MODEL: ${{ steps.model.outputs.current_model }}
+        run: |
+          set -e
+          echo "📡 呼叫 ListModels API..."
+          RES=$(curl -sS -w "\nHTTP_%{http_code}" \
+            "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY")
+          HTTP_CODE=$(echo "$RES" | tail -1 | sed 's/HTTP_//')
+          BODY=$(echo "$RES" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::ListModels HTTP $HTTP_CODE"
+            echo "$BODY" | head -20
+            exit 1
+          fi
+
+          if echo "$BODY" | grep -q "\"models/$MODEL\""; then
+            echo "✅ $MODEL 可用"
+          else
+            echo "::error::$MODEL 已被 Google 棄用!"
+            echo ""
+            echo "當下可用的生產級模型:"
+            echo "$BODY" | grep -oE '"name": "models/gemini-[0-9]+\.?[0-9]*-(flash|pro)[a-z0-9.-]*"' | sort -u
+            echo ""
+            echo "修正: 編輯 config.js 內的 GEMINI_MODEL 後 push"
+            exit 1
+          fi
+
+      - name: generateContent — 實測 API 可用
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MODEL: ${{ steps.model.outputs.current_model }}
+        run: |
+          set -e
+          echo "🧪 實測 generateContent (短 prompt + thinkingBudget:0)..."
+          RES=$(curl -sS -w "\nHTTP_%{http_code}" \
+            -X POST "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "contents":[{"parts":[{"text":"Reply with exactly: OK"}]}],
+              "generationConfig":{
+                "maxOutputTokens":64,
+                "thinkingConfig":{"thinkingBudget":0}
+              }
+            }')
+          HTTP_CODE=$(echo "$RES" | tail -1 | sed 's/HTTP_//')
+          BODY=$(echo "$RES" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::generateContent HTTP $HTTP_CODE"
+            echo "$BODY" | head -30
+            exit 1
+          fi
+
+          # 解析 finishReason(應為 STOP)— API 回傳 JSON 有縮排,regex 要容許冒號前後空白
+          FINISH=$(echo "$BODY" | grep -oE '"finishReason"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+
+          if [ -z "$FINISH" ]; then
+            echo "::warning::沒抽出 finishReason,回應可能異常"
+            echo "$BODY" | head -40
+            exit 1
+          fi
+
+          echo "finishReason: $FINISH"
+
+          if [ "$FINISH" = "STOP" ]; then
+            echo "✅ generateContent 正常 (STOP)"
+          elif [ "$FINISH" = "MAX_TOKENS" ]; then
+            echo "::warning::finishReason=MAX_TOKENS — 此測試 prompt 很短,應該不會觸發。若觸發代表 thinking mode 可能有問題"
+            echo "$BODY" | head -30
+            # MAX_TOKENS 此處視為警告不是錯誤(因為可能是 Gemini 升級後 thinking 強制啟用)
+          elif [ "$FINISH" = "SAFETY" ]; then
+            echo "::error::被 safety filter 擋下 — 極不可能發生於 'OK' prompt,可能 safetySettings 異常"
+            echo "$BODY" | head -40
+            exit 1
+          else
+            echo "::warning::未預期的 finishReason: $FINISH"
+            echo "$BODY" | head -40
+          fi
+
+      - name: 檢查版本一致性(跳過 schedule 觸發,因為不動 code)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -e
+          VER_JSON=$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' version.json | grep -oE '"v[0-9.]+"' | tr -d '"')
+          VER_SW=$(grep -oE "smes-v[0-9.]+" sw.js | head -1 | sed 's/smes-//')
+          VER_INDEX=$(grep -oE "\?v=[0-9.]+" index.html | head -1 | sed 's/?v=/v/')
+          VER_MANAGE=$(grep -oE "\?v=[0-9.]+" manage.html | head -1 | sed 's/?v=/v/')
+
+          echo "version.json: $VER_JSON"
+          echo "sw.js:        $VER_SW"
+          echo "index.html:   $VER_INDEX"
+          echo "manage.html:  $VER_MANAGE"
+
+          if [ "$VER_JSON" = "$VER_SW" ] && [ "$VER_JSON" = "$VER_INDEX" ] && [ "$VER_JSON" = "$VER_MANAGE" ]; then
+            echo "✅ 版本號一致: $VER_JSON"
+          else
+            echo "::warning::版本號不一致,可能導致使用者看到舊版(SW cache 不會更新)"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Gemini Smoke Test 摘要" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 當下模型: \`${{ steps.model.outputs.current_model }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 觸發: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 執行時間: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "本 workflow 每天 UTC 01:00(台灣 09:00)自動跑一次,提早發現模型棄用。" >> $GITHUB_STEP_SUMMARY
