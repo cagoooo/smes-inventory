@@ -96,7 +96,15 @@
     if (parsed.roc_year && !parsed.ad_year) parsed.ad_year = parsed.roc_year + 1911;
     if (parsed.ad_year && !parsed.roc_year) parsed.roc_year = parsed.ad_year - 1911;
 
-    return { parsed, raw: data, compressed };
+    const meta = {
+      source: 'gemini-proxy',
+      model: data.model || 'gemini-2.5-flash',
+      finishReason: data.finish_reason || 'unknown',
+      elapsedMs: null,  // proxy 沒回傳,略過
+      thoughtsTokens: null
+    };
+    console.log('[gemini] ✅ proxy 成功', meta);
+    return { parsed, raw: data, compressed, meta };
   }
 
   // ============ 直連 Gemini API（主要方式）============
@@ -147,6 +155,7 @@
     const PROMPT = `你是台灣國小財產盤點 AI 視覺辨識助手。\n\n${focus}\n\n${BASE_JSON}`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+    const t0 = performance.now();
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -171,12 +180,42 @@
       throw new Error(`Gemini API ${res.status}: ` + t.slice(0, 200));
     }
     const json = await res.json();
-    const txt = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!txt) throw new Error('Gemini 回傳空內容');
+    const elapsedMs = Math.round(performance.now() - t0);
+
+    // 📊 A2: 印 finishReason + usageMetadata,以後診斷 MAX_TOKENS / thinking mode 問題很方便
+    const candidate = json?.candidates?.[0];
+    const finishReason = candidate?.finishReason || 'unknown';
+    const usage = json?.usageMetadata || {};
+    const thoughtsTokens = usage.thoughtsTokenCount || 0;
+    const outputTokens = usage.candidatesTokenCount || 0;
+    const inputTokens = usage.promptTokenCount || 0;
+
+    console.log(`[gemini] finishReason=${finishReason} elapsed=${elapsedMs}ms tokens(in/thought/out)=${inputTokens}/${thoughtsTokens}/${outputTokens}`);
+
+    // 🚨 警示：finishReason === MAX_TOKENS 表示 budget 不夠 → 提示使用者或開發者
+    if (finishReason === 'MAX_TOKENS') {
+      console.warn(`[gemini] ⚠️ MAX_TOKENS 觸發！JSON 可能被截斷。目前 maxOutputTokens=2048，thinking 吃了 ${thoughtsTokens} tokens。建議：增加 maxOutputTokens 或確認 thinkingBudget=0`);
+    }
+    if (finishReason === 'SAFETY') {
+      console.warn(`[gemini] ⚠️ 被 SAFETY filter 擋下，safetyRatings:`, candidate?.safetyRatings);
+    }
+
+    const txt = candidate?.content?.parts?.[0]?.text;
+    if (!txt) throw new Error(`Gemini 回傳空內容 (finishReason=${finishReason})`);
     const parsed = cleanAndParseJSON(txt);
     if (parsed.roc_year && !parsed.ad_year) parsed.ad_year = parsed.roc_year + 1911;
     if (parsed.ad_year && !parsed.roc_year) parsed.roc_year = parsed.ad_year - 1911;
-    return { parsed, raw: json, compressed };
+
+    const meta = {
+      source: 'gemini-direct',
+      model,
+      finishReason,
+      elapsedMs,
+      thoughtsTokens,
+      outputTokens,
+      inputTokens
+    };
+    return { parsed, raw: json, compressed, meta };
   }
 
   // ============ JSON 清理工具（Gemini 偶爾回傳有 markdown / 註解 / 單引號）============

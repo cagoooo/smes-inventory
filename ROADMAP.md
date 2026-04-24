@@ -1,9 +1,14 @@
 # 📍 石門盤點系統 · 產品 Roadmap
 
-> 最後更新：2026-04-18
-> 目前版本：**v7.3.5 — 本教室紀錄可點擊：照片詳情 + AI 原值 + 清冊對應 + 異動歷史**
+> 最後更新：2026-04-24
+> 目前版本：**v7.4.10 — 修 Gemini thinking mode JSON 截斷 + 錯誤分類避免誤登出 + 完整三表跨類型拍照辨識 + 防雷 SKILLS 建置**
 > 部署網址：https://cagoooo.github.io/smes-inventory/
 > **登入系統已完成實測，任何非 `@mail2.smes.tyc.edu.tw` 帳號會被自動登出**
+>
+> 🛡️ **本輪三件大事**：
+> 1. **WiFi AP 全校盤點整合**(v7.4.0-7.4.3)——inventory_items / touchscreens / wifi_aps 三表跨類型自動路由 + 新 AP 可拍照直接新增
+> 2. **5 個層級的錯誤處理連環雷清除**(v7.4.4-7.4.10)——refresh_token UX / JSON 寬容 / prompt 具體範例 / AP 編號抽取 / 錯誤分類層級 / thinking mode 關閉
+> 3. **建立永久防雷 SKILLS**(skill-level)——`supabase-secrets-for-browser-apis`、`gemini-api-integration`(增補)、`supabase-google-oauth-integration`(交叉引用)
 
 ## 🏆 系統能力里程碑
 
@@ -33,7 +38,20 @@
 | v7.3.3 | 04-18 | AI 辨識精準度升級：精確比對 / 信心度可視化 / OCR 混淆字元提示 | 1.5h |
 | v7.3.4 | 04-18 | AI 辨識三部曲：分類 prompt (hint_type) + 編輯標記 + 照片內摘要 overlay | 2h |
 | v7.3.5 | 04-18 | 本教室紀錄可點擊：照片詳情 modal + 全螢幕 zoom + 清冊對應 + 異動歷史 | 1h |
-| **現況** | | **44.25 小時內打造完整學校資訊管理系統** | **~44.25h** |
+| v7.4.0 | 04-20 | **WiFi AP 盤點整合**：wifi_aps 表 + 83 間教室 AP 建模 + CRUD + dashboard | 2h |
+| v7.4.1 | 04-20 | UI pills 跨類型顯示（💻 主機 / 🖥 觸屏 / 📡 AP）+ 本教室資產詳情面板 | 1h |
+| v7.4.2 | 04-20 | 拍照 AI 自動偵測設備類型 → 跨三張表（inventory_items / touchscreens / wifi_aps）路由更新 | 1.5h |
+| v7.4.3 | 04-20 | 拍照直接**新增未登錄 AP**：AI 辨識後自動插入 wifi_aps 並抽下一個 AP 編號 | 1h |
+| v7.4.4 | 04-21 | `app_secrets` + RLS 模式取代 Edge Function 代理 + refresh_token 過期友善 UX `handleSessionExpired` | 1.5h |
+| v7.4.5 | 04-21 | `cleanAndParseJSON` 寬容 parser（移除 markdown fence / 尾隨逗號 / 單引號 / 未引號屬性名） | 0.5h |
+| v7.4.6 | 04-21 | Prompt 改用**具體 JSON 範例**取代「型別描述」避免 Gemini 把「整數」填入字串 | 0.5h |
+| v7.4.7 | 04-21 | `extractApCode()` 多模式智慧抽取（XS114-SMES-AP-133 → AP-133、R610-01 → 保留） | 0.5h |
+| v7.4.8 | 04-21 | 上傳後自動滾動到預覽面板 UX + 進度條計入所有資產類型 | 0.25h |
+| v7.4.9 | 04-21 | **錯誤分類層級**：`isGeminiServerError()` 5xx/429 不 fallback + proxy 401 不觸發登出 | 0.75h |
+| v7.4.10 | 04-21 | 關閉 Gemini 2.5 thinking mode（`thinkingBudget: 0`）+ maxOutputTokens 2048 防 JSON 截斷 | 0.25h |
+| **SKILLS** | 04-21 | 永久防雷：`supabase-secrets-for-browser-apis`(新)、`gemini-api-integration`(+雷 #9) | 1h |
+| v7.4.11 | 04-24 | **A1+A2 觀測性**：AI 來源 chip(🤖/🔀/⚠️) + finishReason log + tokens 統計 + MAX_TOKENS 自動警示 | 1h |
+| **現況** | | **~53.25 小時內打造完整學校資訊管理系統 + 防雷 SKILLS 生態 + 觀測性基建** | **~53.25h** |
 
 ---
 
@@ -105,6 +123,51 @@
 - v7.2.3：MAC 廠商 OUI 辨識 + IP 衝突偵測 + 網路 Excel 匯出
 - v7.2.4：QR 標籤 PDF 改 Canvas 渲染，修復中文亂碼
 - `pwa-cache-bust` skill：下次遇到 SW 快取問題自動套用修法
+
+---
+
+## 🌟 v7.4 階段性成果總覽（2026-04-20 ~ 2026-04-21 完成）
+
+> 這一階段的關鍵突破：**從「電腦+觸屏」擴大為「電腦+觸屏+WiFi AP」三類資產全面覆蓋**，並且**把一連串隱藏雷區徹底清理 + 建立永久防雷 SKILLS 避免重複踩**。
+
+### 🎯 三大核心突破
+
+1. **WiFi AP 全校盤點整合**（v7.4.0-7.4.3）
+   - 新建 `wifi_aps` 表涵蓋 83 間教室 AP 建模（品牌/型號/MAC/IP/財產號/是否新舊）
+   - UI 雙模：hero pills(💻/🖥/📡) + 本教室資產展開詳情面板
+   - 拍照 AI 自動**三表路由**:同一張 `photo_records` 根據偵測類型寫入不同清冊
+   - 拍照即可**新增未登錄 AP**（學校有些 AP 沒在財產清冊）+ 自動抽下一個 AP 編號
+
+2. **連環 5 雷清除**（v7.4.4-7.4.10）— 這是整個專案最精彩的除錯故事
+   - 雷 1:Supabase `publishable key` 不是 JWT → Edge Function `verify_jwt=true` 401 → 改用 `app_secrets` + RLS 方案
+   - 雷 2:Refresh token 30 天過期使用者被踢 → 加 `handleSessionExpired()` 友善 UX
+   - 雷 3:Prompt 用「整數 / true/false」型別描述 → Gemini 照填字面值壞 JSON → 改「具體範例」
+   - 雷 4:錯誤處理連鎖雪崩 → 503 fallback → proxy 401 → 誤判 session 失效 → 自動登出無辜使用者 → `isGeminiServerError()` 嚴格分類
+   - 雷 5:Gemini 2.5 thinking mode 吃掉 `maxOutputTokens` 1024 → JSON 在 `"confidence":` 被截斷 → `thinkingConfig: { thinkingBudget: 0 }`
+
+3. **永久防雷 SKILLS 建置**（skill-level infra）
+   - 新建 `supabase-secrets-for-browser-apis` skill:一次涵蓋 publishable vs JWT / verify_jwt 陷阱 / refresh token UX / 錯誤層級設計
+   - 增補 `gemini-api-integration` 雷 #9(thinking mode) + troubleshooting #6.5(JSON 截斷)
+   - 交叉引用 `supabase-google-oauth-integration` → `supabase-secrets-for-browser-apis`
+   - **效果**:未來任何類似專案會**主動觸發**相關 skill,不會重複踩同樣的雷
+
+### 🛠 程式碼層新增的可重用模組
+
+- `auth.js::loadAppSecrets()` — 登入後自動拉 key 存 localStorage
+- `auth.js::getFreshAccessToken()` — 快過期主動 refresh
+- `auth.js::handleSessionExpired()` — 友善重登 UI
+- `gemini.js::cleanAndParseJSON()` — JSON 寬容解析（4 層後備）
+- `gemini.js::isGeminiServerError()` — 錯誤來源分類 helper
+- `app.js::extractApCode()` — 複合編號智慧抽取
+- `app.js::createWifiApFromDetection()` / `createTouchscreenFromDetection()` — 跨表新增
+
+### 📊 資料表 schema 增量
+
+- ➕ `app_secrets`(key, value, description, updated_at) + RLS authenticated 可讀
+- ➕ `wifi_aps`(id, classroom_code, brand, model, mac, ip, property_number, full_property_number, is_old, ...)
+- ➕ `photo_records.matched_touchscreen_id`
+- ➕ `photo_records.matched_wifi_ap_id`
+- ➕ `wifi_aps.full_property_number`（完整標籤內容保留）
 
 ---
 
@@ -593,9 +656,130 @@ app.js 在 updateInventoryItem 前先 INSERT log → DB 層或 app 層都可。
 
 ---
 
-## 🚀 v7.4 — 短期優化清單（建議接下來這週完成，約 6-8 小時）
+## 🛡 防雷 SKILLS 系統（2026-04-21 建置）
+
+> **為什麼要做 SKILLS**：v7.4.0 → v7.4.10 整整 11 個 hotfix 版本、5 個連環雷才把「從瀏覽器叫 Gemini」這條路走通。這些教訓如果只留在 git log 就會**失傳**，下個類似專案(無論是自己還是別人)還是會踩一樣的雷。SKILLS 機制讓 Claude 在看到類似情境時**主動觸發**對應指引。
+
+### 📚 本輪建置的三個 skill 關係
+
+| Skill | 關係 | 定位 |
+|:---|:---|:---|
+| `gemini-api-integration` | 增補雷 #9 | Gemini 模型棄用防禦 + 本輪新加 thinking mode 陷阱 |
+| `supabase-google-oauth-integration` | 加交叉引用 | Supabase + Google 登入完整流程（本輪只改 cross-reference） |
+| **`supabase-secrets-for-browser-apis`** | **全新** | 本輪主力:Edge Function vs app_secrets 決策 + publishable key vs JWT / verify_jwt / refresh token / 錯誤分類 5 大雷 |
+
+### 🎯 Skill 觸發情境對照（以後自動避開的雷）
+
+| 症狀 / 關鍵字 | 自動啟動 skill | 避開的具體雷 |
+|:---|:---|:---|
+| 「JSON 在 `"confidence":` 被截斷」「Gemini 回到一半就沒了」 | `gemini-api-integration` 雷 #9 | thinking mode 吃 maxOutputTokens |
+| 「publishable key 401」「`UNAUTHORIZED_INVALID_JWT_FORMAT`」 | `supabase-secrets-for-browser-apis` 雷 #1 | publishable key 不是 JWT |
+| 「我想從前端叫 Gemini 但怕 key 被偷」 | `supabase-secrets-for-browser-apis` 方案 B | 選對 app_secrets + RLS 而非 Edge Function |
+| 「refresh_token 過期」「使用者打開就被踢」 | `supabase-secrets-for-browser-apis` 雷 #4 | 30 天過期 + 友善重登 UI |
+| 「503 錯誤後使用者被登出了」 | `supabase-secrets-for-browser-apis` 雷 #5 | 錯誤層級分類,5xx 不觸發 auth expired |
+| 「拍照上傳後 JS 錯誤對不上」「SW 快取舊 JS」 | `pwa-cache-bust` | URL 加 `?v=` 版本字串 |
+| 「新專案要 Google 登入」 | `supabase-google-oauth-integration` → 自動接到 `supabase-secrets-for-browser-apis` | GCP UI 改版 / Client Secret 新政策 |
+
+### 💰 實務效益估算
+
+假設每個雷都**自己再踩一次**需要的 debug 時間:
+- Thinking mode 雷:2~4 小時(很難看出 JSON 為什麼被截斷,會一直懷疑 prompt)
+- Publishable key vs JWT:1 小時(看文件才知道差別)
+- Refresh token 30 天:1~2 小時(不知道是 Supabase 預設行為)
+- 錯誤分類連鎖:3~5 小時(症狀離根因隔兩層)
+- verify_jwt 無法 MCP 切換:1 小時
+
+**合計下次節省約 8~13 小時**,完全回本今天寫 skill 的 1 小時。
+
+---
+
+## 🔮 基於 v7.4.x 教訓的未來優化建議（**這是本輪新增的重點**）
+
+> **閱讀提示**：以下是從剛走過的連環雷路徑**延伸**出來的具體優化,跟下面「v7.4 — 短期優化清單」的任務是**不同軌**的。下面那張表是原本在 v7.3 末提的盤點流程優化,實際 v7.4 跑了「三表整合 + 防雷」路線後,那些任務順延到 v7.4.11+。
+
+### 🔴 A. 觀測性強化(Observability, ~4h,**最值得下一個 sprint 做**)
+
+| 任務 | 價值 | 難度 | 估時 | 狀態 | 為什麼重要(引用本輪踩雷教訓) |
+|:---|:---:|:---:|:---:|:---:|:---|
+| **前端顯示「AI 辨識來源」標示** | ★★★★★ | 易 | 0.5h | ✅ **v7.4.11 完成** | v7.4 除錯時使用者看不出「AI 到底有沒有成功」— 加個綠/藍/橘 chip 顯示 `🤖 gemini-2.5-flash / 🔀 proxy / ⚠️ fallback` + 耗時 + finishReason(非 STOP 時紅色脈動提示) |
+| **`finishReason` log + 顯示** | ★★★★★ | 易 | 0.5h | ✅ **v7.4.11 完成** | 今天 thinking mode 雷就是印 `finishReason: MAX_TOKENS` 才找到根因。現每次呼叫都 `console.log` finishReason + tokens(in/thought/out),MAX_TOKENS 或 SAFETY 時 console.warn 提示解法 |
+| **Supabase Edge Function log aggregator** | ★★★★ | 中 | 1.5h | 🔜 待辦 | 目前 Edge Function 錯誤只能手動 `get_logs`,應該有個後台頁面彙整過去 7 天的 log + 高亮 5xx/4xx |
+| **使用者行為 breadcrumb(Sentry 輕量版)** | ★★★★ | 中 | 1.5h | 🔜 待辦 | 離線佇列失敗、重試、session 過期這些事件要能重現,做輕量級 breadcrumb(每步存 localStorage ring buffer,錯誤時打包上傳) |
+
+### 🟡 B. 防雷自動化(Preventive,~3h,**每次部署自動跑**)
+
+| 任務 | 價值 | 難度 | 估時 | 描述 |
+|:---|:---:|:---:|:---:|:---|
+| **部署前腳本自動跑 ListModels** | ★★★★★ | 易 | 0.5h | `deploy.sh` 加一步:打 ListModels 確認 `gemini-2.5-flash` 還在,不在就擋部署 |
+| **部署後 smoke test** | ★★★★★ | 易 | 1h | GitHub Actions 加 e2e:打一張測試照片到生產環境 → 檢查回傳的 JSON source 是 'gemini' 不是 'fallback' |
+| **Supabase quota 監控** | ★★★★ | 中 | 1h | 每週跑一次 `get_advisors` + DB size 檢查,快超額度時 LINE 通知(用既有 `line-messaging-firebase` skill) |
+| **App secrets 自動 rotate 腳本** | ★★★ | 中 | 0.5h | 寫 SQL 一條指令可以換 Gemini key 並印出 UPDATE 時間 |
+
+### 🟢 C. 錯誤恢復力(Resilience,~5h,**學到的錯誤分類觀念制度化**)
+
+| 任務 | 價值 | 難度 | 估時 | 描述 |
+|:---|:---:|:---:|:---:|:---|
+| **錯誤分類 helper 統一 module** | ★★★★★ | 易 | 1h | 把 `isGeminiServerError`、`isAuthError`、`isNetworkError` 抽 `js/errors.js` 統一管,其他 module 共用 |
+| **重試策略(exponential backoff)** | ★★★★ | 中 | 1.5h | 503/429 現在只會提示重試,應該自動重試 2-3 次(間隔 1s, 3s, 9s)再降級給使用者 |
+| **照片上傳失敗恢復 UI** | ★★★★ | 中 | 1.5h | 目前離線佇列只有 badge,看不到等待上傳的縮圖。做個「📤 待上傳(3)」抽屜列出 + 一鍵重試/刪除 |
+| **Service Worker cache 版本自動校驗** | ★★★ | 易 | 1h | 每次 SW 啟動比對 `version.json` vs 自己快取的版本,不一致就提示使用者硬重整 |
+
+### 🔵 D. AI 辨識品質提升(Quality,~6h,**讓使用者越用越信任**)
+
+| 任務 | 價值 | 難度 | 估時 | 描述 |
+|:---|:---:|:---:|:---:|:---|
+| **照片前處理 — 模糊偵測** | ★★★★★ | 中 | 2h | 上傳前用 Canvas + Laplacian variance 偵測模糊,太糊的不讓送 AI(省 quota 省等待) |
+| **Confidence 分層處理** | ★★★★★ | 易 | 1h | < 0.5 紅色警示必覆核 / 0.5~0.8 黃色建議人工確認 / > 0.8 綠色自動套用 |
+| **多張照片融合辨識** | ★★★★ | 中 | 2h | 一台主機可拍正面+側面+標籤三張,合併成一次 Gemini call(省 quota 且更準) |
+| **辨識結果 A/B 比對** | ★★★ | 中 | 1h | 勾個「試 flash vs pro」開關,同圖打兩次讓使用者選哪個更準,統計後決定是否升級 pro |
+
+### 🟣 E. 已知技術債清理(Technical Debt,~4h)
+
+| 任務 | 價值 | 難度 | 估時 | 描述 |
+|:---|:---:|:---:|:---:|:---|
+| **Edge Function `gemini-proxy` 取捨** | ★★★★ | 易 | 0.5h | 既然走 app_secrets 了,Edge Function 是 dead code 但還在。決定:(A) 完全砍掉 / (B) 保留當真的 fallback / (C) 改成 server-only 用途 |
+| **`app_secrets` 值的後台管理介面** | ★★★ | 中 | 1.5h | 現在 rotate key 要手動 SQL,做個 manage.html 加個管理員才看得到的「secrets 管理」頁 |
+| **手機端上傳進度條細化** | ★★★ | 易 | 1h | 壓縮 / 上傳 / AI 辨識 / DB 寫入 — 四階段各一個進度顯示,不是只有「處理中」 |
+| **gemini.js 抽離 prompt 到獨立 `prompts.js`** | ★★★ | 易 | 1h | 現在 prompt 寫死在程式裡,要改要動 JS 部署,抽出來甚至可放 DB `app_secrets` 動態讀 |
+
+### 🟠 F. 使用情境延伸(Use Cases,~8h,**讓這套系統真的活起來**)
+
+| 任務 | 價值 | 難度 | 估時 | 想像情境 |
+|:---|:---:|:---:|:---:|:---|
+| **QR 掃碼盤點模式** | ★★★★★ | 中 | 2h | 打開 App → 「📱 掃 QR」→ 相機讀 QR → 直接進入該財產的編輯頁 — 盤點時不用手動找 |
+| **「本次盤點異動總覽」報表** | ★★★★★ | 易 | 1.5h | 跑完一輪後一鍵出「我改了 47 台、搬 8 台、新增 3 台、遺失 1 台」PDF + LINE 推播給主任 |
+| **批次重新辨識舊照** | ★★★★ | 中 | 2h | Gemini 升級後,用新 prompt 對歷史 `photo_records` 批次重跑,找回之前因為雷而 fallback 的那些 |
+| **iPad + Apple Pencil 手寫備註** | ★★★ | 中 | 2h | 拍完照可直接圈出「這裡螢幕裂」+ 手寫字 → 自動 OCR 存 notes |
+| **語音輸入備註** | ★★★ | 易 | 0.5h | 用瀏覽器 Web Speech API — 邊巡場邊說「AP101 看起來有點舊」,自動上傳關聯 |
+
+### 🔷 G. 監控與告警(Ops,~3h)
+
+| 任務 | 價值 | 難度 | 估時 | 描述 |
+|:---|:---:|:---:|:---:|:---|
+| **Gemini 當天用量統計** | ★★★★ | 中 | 1h | 後台頁顯示「今天用了 N 次 Gemini / X 次 fallback / 成功率 Y%」 |
+| **LINE 即時告警整合** | ★★★★ | 中 | 1.5h | 單日失敗率 > 20% 時推 LINE 給資訊組老師(引用 `line-messaging-firebase` skill) |
+| **每週健康度報告** | ★★★ | 易 | 0.5h | 每週一早上 Supabase 排程跑 SQL,統計總數 / 更新次數 / 未拍數,email + LINE 雙推 |
+
+### 總表:建議優先級(結合前面所有建議)
+
+| 優先 | 項目 | 估時 | 理由 |
+|:---:|:---|:---:|:---|
+| 🥇 | A1+A2 觀測性(辨識來源顯示 + finishReason log) | 1h | **立刻做** — 下次出問題才有線索 |
+| 🥇 | B1+B2 防雷自動化(ListModels + smoke test) | 1.5h | 擋下一次模型棄用的麻煩 |
+| 🥈 | C1+C2 錯誤分類 module + 自動重試 | 2.5h | 制度化已學到的錯誤處理 |
+| 🥈 | F1+F2 QR 掃碼 + 異動總覽報表 | 3.5h | 使用者端最有感的升級 |
+| 🥉 | D1+D2 模糊偵測 + confidence 分層 | 3h | 讓 AI 辨識品質進一步提升 |
+| 🥉 | E1+E2 Edge Function 取捨 + secrets 管理介面 | 2h | 清掉技術債讓後續更乾淨 |
+
+**總估時 ~13.5h = 兩個週末可以做完**,做完後系統會進入「真正穩定的 v7.5」。
+
+---
+
+## 🚀 v7.4 — 短期優化清單（原計劃,實際 v7.4.0-10 走了三表整合+防雷路線,以下項目順延到 v7.4.11+）
 
 > **核心原則**：趁著剛完成的「清冊自動同步」+「搬家偵測」功能熱度，把**盤點流程**相關體驗補到最好，讓您這次全校走訪最省力、最精準。
+>
+> ⚠️ **2026-04-24 註記**:實際 v7.4.0-v7.4.10 走了另一條路(WiFi AP 整合 + 連環雷清除),以下項目仍然有價值,順延為 **v7.4.11+ 候選**。部分項目(異動歷史、盤點進度地圖、信心度低複查)建議優先於「本學期期末全校大盤點」前完成。
 
 ### 🔴 P0 立即補強（建議本週做）
 | 任務 | 價值 | 難度 | 估時 | 為什麼要做 |

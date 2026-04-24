@@ -838,9 +838,9 @@ ${hasMatch ? `
     // 自動啟動辨識（傳入 hint_type 讓 AI 針對不同類型優化）
     try {
       const hintType = state.captureHint || 'auto';  // 'auto' / 'label' / 'device'
-      const { parsed, raw, compressed } = await window.SMES_GEMINI.recognize(f, hintType);
+      const { parsed, raw, compressed, meta } = await window.SMES_GEMINI.recognize(f, hintType);
       state.currentFile = compressed;
-      state.lastDetection = { parsed, raw };
+      state.lastDetection = { parsed, raw, meta };
 
       // 如果剛剛透過 QR 掃過，強制覆蓋財產編號（QR 比 AI 準）
       if (state.qrPrefill) {
@@ -848,7 +848,7 @@ ${hasMatch ? `
       }
 
       fillDetectFields(parsed);
-      renderAISummary(parsed);  // 在照片底部顯示摘要
+      renderAISummary(parsed, meta);  // 在照片底部顯示摘要 + AI 來源 chip
       await showMatchSuggestions(parsed);
 
       // QR 預填了 matched_inventory_id 的話直接選上該建議並觸發 diff
@@ -1077,7 +1077,8 @@ ${hasMatch ? `
   }
 
   // 🎯 #7: 在照片底部顯示 AI 辨識摘要（不用滑到表單就看到關鍵資訊）
-  function renderAISummary(p) {
+  // A1 (v7.4.11): 第三行顯示 AI 來源 chip,讓使用者/開發者一眼看到是走哪條路
+  function renderAISummary(p, meta) {
     const overlay = $('aiSummaryOverlay');
     const line1 = $('aiSummaryLine1');
     const line2 = $('aiSummaryLine2');
@@ -1114,8 +1115,57 @@ ${hasMatch ? `
     line1.textContent = mainParts.join(' · ') || '（AI 未認出主要欄位）';
     line2.textContent = subParts.join(' · ');
     overlay.style.display = 'block';
+
+    // 🎯 A1 (v7.4.11): AI 來源 chip(第三行)
+    renderSourceChip(overlay, meta);
   }
   window._renderAISummary = renderAISummary;  // debug
+
+  // A1: 根據 meta.source 決定顯示的 chip
+  function renderSourceChip(overlay, meta) {
+    // 先移除舊的 chip(重新辨識時)
+    overlay.querySelectorAll('.ai-source-chip').forEach(el => el.remove());
+    if (!meta || !meta.source) return;
+
+    const chip = document.createElement('div');
+    chip.className = 'ai-source-chip';
+
+    let icon, label, cls;
+    if (meta.source === 'gemini-direct') {
+      icon = '🤖';
+      label = meta.model || 'Gemini';
+      cls = 'src-direct';
+    } else if (meta.source === 'gemini-proxy') {
+      icon = '🔀';
+      label = `${meta.model || 'Gemini'} (proxy)`;
+      cls = 'src-proxy';
+    } else if (meta.source === 'fallback') {
+      icon = '⚠️';
+      label = '預設模板 (fallback)';
+      cls = 'src-fallback';
+    } else {
+      icon = '❓';
+      label = meta.source;
+      cls = 'src-unknown';
+    }
+    chip.classList.add(cls);
+
+    // 加上時間與 tokens(若有)
+    const extras = [];
+    if (meta.elapsedMs) extras.push(`${(meta.elapsedMs / 1000).toFixed(1)}s`);
+    if (meta.finishReason && meta.finishReason !== 'STOP' && meta.finishReason !== 'unknown') {
+      // 非正常結束時高亮(MAX_TOKENS / SAFETY / RECITATION 等)
+      extras.push(`⚠ ${meta.finishReason}`);
+      chip.classList.add('src-warning');
+    }
+    if (meta.thoughtsTokens && meta.thoughtsTokens > 100) {
+      // thinking 吃超過 100 tokens 時顯示,因為我們明明設了 thinkingBudget: 0
+      extras.push(`🧠 ${meta.thoughtsTokens}`);
+    }
+
+    chip.innerHTML = `<span class="src-icon">${icon}</span><span class="src-label">${label}</span>${extras.length ? `<span class="src-extras">${extras.join(' · ')}</span>` : ''}`;
+    overlay.appendChild(chip);
+  }
 
   // 🎯 使用者按「我要修正財產編號」時，聚焦到該欄位讓鍵盤彈出
   window.focusPropertyNumber = () => {

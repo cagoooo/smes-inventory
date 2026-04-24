@@ -1,5 +1,5 @@
 {
-  "version": "v7.4.10",
-  "build": "2026-04-21a",
-  "notes": "修 Gemini JSON 截斷：關閉 thinking mode（thinkingBudget=0）+ maxOutputTokens 從 1024 提升至 2048"
+  "version": "v7.4.11",
+  "build": "2026-04-24a",
+  "notes": "A1+A2 觀測性強化：照片底部顯示 AI 來源 chip（gemini-direct / proxy / fallback）+ 每次呼叫 log finishReason + tokens，出問題時一眼找根因"
 }
