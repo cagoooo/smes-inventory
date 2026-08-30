@@ -82,6 +82,7 @@ jobs:
           fi
 
       - name: generateContent — 實測 API 可用
+        id: generate
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           MODEL: ${{ steps.model.outputs.current_model }}
@@ -102,6 +103,19 @@ jobs:
           BODY=$(echo "$RES" | sed '$d')
 
           if [ "$HTTP_CODE" != "200" ]; then
+            if [ "$HTTP_CODE" = "429" ] && echo "$BODY" | grep -qiE 'monthly spending cap|spend cap'; then
+              echo "::warning::generateContent 暫時無法實測：Google 專案已達每月 spending cap (HTTP 429)"
+              echo "status=spending_cap" >> "$GITHUB_OUTPUT"
+              {
+                echo "### ⚠️ generateContent 暫停實測"
+                echo ""
+                echo '- HTTP: `429 RESOURCE_EXHAUSTED`'
+                echo "- 原因：Google Gemini 專案已達每月 spending cap。"
+                echo "- 判定：不是模型棄用，也不是 workflow 程式錯誤；本次不將額度封頂誤報為 smoke test 失敗。"
+                echo "- 後續：請到 [Google AI Studio Spend](https://ai.studio/spend) 提高或重設專案上限；完成後重新執行本 workflow。"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
             echo "::error::generateContent HTTP $HTTP_CODE"
             echo "$BODY" | head -30
             exit 1
@@ -133,6 +147,8 @@ jobs:
             echo "$BODY" | head -40
           fi
 
+          echo "status=ok" >> "$GITHUB_OUTPUT"
+
       - name: 檢查版本一致性(跳過 schedule 觸發,因為不動 code)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
@@ -161,5 +177,12 @@ jobs:
           echo "- 當下模型: \`${{ steps.model.outputs.current_model }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- 觸發: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- 執行時間: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.generate.outputs.status }}" = "spending_cap" ]; then
+            echo "- generateContent: ⚠️ 因每月 spending cap 暫停實測" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.generate.outputs.status }}" = "ok" ]; then
+            echo "- generateContent: ✅ 實測完成" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- generateContent: ❌ 未完成" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "本 workflow 每天 UTC 01:00(台灣 09:00)自動跑一次,提早發現模型棄用。" >> $GITHUB_STEP_SUMMARY
