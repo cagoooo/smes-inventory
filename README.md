@@ -1,5 +1,7 @@
 # 石門國小 電腦財產盤點系統
 
+🌐 **線上使用：[教室資訊設備盤點系統](https://cagoooo.github.io/smes-inventory/)**
+
 行動化電腦主機盤點：入班拍照 → Gemini AI 自動辨識廠牌/型號/財產編號/取得年份 → 自動比對既有財產清冊，產出電腦汰舊換新決策依據。
 
 ## 功能
@@ -61,7 +63,7 @@ scripts/
 - Repository：`cagoooo/smes-inventory`
 - 可見性：公開
 - 主要技術：JavaScript
-- 線上入口：未在 GitHub repository metadata 設定
+- 線上入口：<https://cagoooo.github.io/smes-inventory/>
 
 ### 可以怎麼應用
 
