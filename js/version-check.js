@@ -41,18 +41,23 @@
     document.body.appendChild(banner);
   }
 
+  // 本工具自己的範圍：同網域 cagoooo.github.io 還有其他工具，只能動自己的快取與註冊
+  // 快取名稱見 sw.js：static-/data-/photo- + smes-v<版本>
+  const OWN_SCOPE = new URL('/smes-inventory/', location.origin).href;
+  const isOwnCache = (k) => /^(static|data|photo)-smes-v/.test(k);
+
   async function applyUpdate() {
-    // 強制重新註冊 SW，清舊 cache
+    // 強制更新本工具的 SW，清舊 cache
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
-      for (const r of regs) {
+      for (const r of regs.filter(r => r.scope.startsWith(OWN_SCOPE))) {
         await r.update();
       }
     }
-    // 清瀏覽器快取（只清我們控制的）
+    // 清瀏覽器快取（只清本工具的）
     if ('caches' in window) {
       const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
+      await Promise.all(keys.filter(isOwnCache).map(k => caches.delete(k)));
     }
     // 硬重整
     location.reload();

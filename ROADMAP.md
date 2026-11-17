@@ -50,6 +50,7 @@
 | v7.4.9 | 04-21 | **錯誤分類層級**：`isGeminiServerError()` 5xx/429 不 fallback + proxy 401 不觸發登出 | 0.75h |
 | v7.4.10 | 04-21 | 關閉 Gemini 2.5 thinking mode（`thinkingBudget: 0`）+ maxOutputTokens 2048 防 JSON 截斷 | 0.25h |
 | **SKILLS** | 04-21 | 永久防雷：`supabase-secrets-for-browser-apis`(新)、`gemini-api-integration`(+雷 #9) | 1h |
+| v7.4.13 | 11-17 | **更新範圍修正**：立即更新／自我修復只清除本工具的快取與註冊，不再影響同網域其他工具（`version-check.js` 更新按鈕＋`sw.js` 啟用時清舊快取都只動 `static-/data-/photo-smes-v*`） | 0.25h |
 | v7.4.12 | 11-17 | **網站頁尾**：登入畫面加完整頁尾、主畫面底部加署名列，「阿凱老師」連到教育科技創新專區 | 0.5h |
 | v7.4.11 | 04-24 | **A1+A2 觀測性**：AI 來源 chip(🤖/🔀/⚠️) + finishReason log + tokens 統計 + MAX_TOKENS 自動警示 | 1h |
 | v7.4.12 | 04-24 | **B1+B2 防雷自動化**:`deploy.sh` 本地部署前檢查(ListModels / generateContent / 版本一致) + GitHub Actions 每日 smoke test + DEPLOY.md 完整設定文件 | 1.5h |

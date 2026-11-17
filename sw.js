@@ -3,7 +3,7 @@
 //   - 靜態資源 (HTML/CSS/JS/icon/CDN)：cache-first
 //   - Supabase REST/Storage API：network-first，失敗則讀 cache
 //   - 照片 URL (Supabase Storage CDN)：stale-while-revalidate
-const CACHE_VERSION = 'smes-v7.4.12-2026-11-17a';
+const CACHE_VERSION = 'smes-v7.4.13-2026-11-17a';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const DATA_CACHE = `data-${CACHE_VERSION}`;
 const PHOTO_CACHE = `photo-${CACHE_VERSION}`;
@@ -53,10 +53,12 @@ self.addEventListener('install', (e) => {
 });
 
 // ============ Activate — 清除舊版 cache ============
+// 只清本工具（static-/data-/photo-smes-v*）的舊版，同網域其他工具的快取不能動
+const isOwnCache = (k) => /^(static|data|photo)-smes-v/.test(k);
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => !k.endsWith(CACHE_VERSION)).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => isOwnCache(k) && !k.endsWith(CACHE_VERSION)).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
