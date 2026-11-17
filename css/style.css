@@ -56,11 +56,13 @@ input, textarea, select { user-select: auto; -webkit-user-select: auto; }
 /* =========== 登入畫面 =========== */
 .login-screen {
   position: fixed; inset: 0; z-index: 1000;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
   padding: 24px;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
 }
 .login-card {
+  margin-top: auto;
   background: var(--card); border-radius: 24px;
   padding: 36px 28px; max-width: 380px; width: 100%;
   text-align: center;
@@ -95,6 +97,68 @@ input, textarea, select { user-select: auto; -webkit-user-select: auto; }
   margin: 20px 0 0; line-height: 1.6;
   padding: 12px; background: var(--primary-light);
   color: var(--primary-dark); border-radius: 10px;
+}
+
+/* =========== 頁尾（2026-11-17 新增署名） =========== */
+.login-footer {
+  margin: 24px 0 auto; width: 100%; max-width: 760px;
+  padding: 20px 20px 16px;
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.28);
+  border-radius: var(--radius-lg);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  color: #fff; font-size: 14px;
+}
+.login-footer__brand { display: flex; align-items: center; gap: 12px; }
+.login-footer__brand img {
+  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  background: #fff; padding: 4px; box-shadow: var(--shadow);
+}
+.login-footer__brand strong { display: block; font-size: 16px; font-weight: 800; }
+.login-footer__brand span { display: block; font-size: 13px; opacity: 0.85; }
+.login-footer__points {
+  list-style: none; margin: 16px 0; padding: 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+}
+.login-footer__points li {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px; border-radius: var(--radius);
+  background: rgba(255,255,255,0.12);
+}
+.lf-icon { font-size: 20px; line-height: 1.2; }
+.login-footer__points strong { display: block; font-size: 14px; }
+.login-footer__points small { display: block; font-size: 13px; line-height: 1.5; opacity: 0.85; }
+.login-footer__bottom {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.25);
+}
+.login-footer .site-credit { margin: 0; font-size: 14px; }
+.login-footer .site-credit__author { color: #fff; }
+.footer-version {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35);
+  font-size: 12px; font-weight: 600;
+}
+.site-credit__heart { display: inline-block; margin: 0 2px; }
+.site-credit__author {
+  color: var(--primary); font-weight: 700; text-decoration: none;
+  border-bottom: 1px dotted currentColor; padding: 2px 0;
+}
+.site-credit__author:hover { opacity: 0.8; }
+.app-credit {
+  margin: 28px 0 8px; padding: 16px 12px 0;
+  border-top: 0.5px solid var(--sep);
+  text-align: center; color: var(--text-soft); font-size: 13px;
+}
+.app-credit .site-credit { margin: 0; }
+@media (max-width: 640px) {
+  .login-footer__points { grid-template-columns: 1fr; }
+  .login-footer__bottom { flex-direction: column; text-align: center; }
+  .footer-school { display: block; }
+  .footer-dot { display: none; }
+}
+@media print {
+  .login-footer, .app-credit { display: none !important; }
 }
 
 /* =========== 使用者 Chip =========== */
