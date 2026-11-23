@@ -7,7 +7,7 @@
   // 登入時由 auth.js 帶進 localStorage，所有裝置都會跟著換。
   const MODEL_STORAGE = 'smes_gemini_model';
   const MODEL_NAME_RE = /^gemini-[a-z0-9.\-]{2,60}$/;
-  function defaultModel() { return window.SMES_CONFIG.GEMINI_MODEL || 'gemini-2.5-flash'; }
+  function defaultModel() { return window.SMES_CONFIG.GEMINI_MODEL || 'gemini-3.1-flash-lite'; }
   function getModel() {
     let m = '';
     try { m = (localStorage.getItem(MODEL_STORAGE) || '').trim(); } catch (e) { /* ignore */ }

@@ -2,7 +2,7 @@
 
 🌐 **線上使用：[教室資訊設備盤點系統](https://cagoooo.github.io/smes-inventory/)**
 
-> 📌 **目前版本：v7.5.7**（依據 `version.json`）
+> 📌 **目前版本：v7.5.8**（依據 `version.json`）
 
 行動化電腦主機盤點：入班拍照 → Gemini AI 自動辨識廠牌/型號/財產編號/取得年份 → 自動比對既有財產清冊，產出電腦汰舊換新決策依據。
 
@@ -73,7 +73,7 @@ scripts/
 
 ## AI 辨識模型切換（v7.5.7 起）
 
-- 預設模型寫在 `config.js` 的 `GEMINI_MODEL`（目前 `gemini-2.5-flash`）。
+- 預設模型寫在 `config.js` 的 `GEMINI_MODEL`（目前 `gemini-3.1-flash-lite`，2026-11-24 由 `gemini-2.5-flash` 改用）。
 - 管理後台「🤖 AI 模型」分頁可以改用其他 Gemini 模型，並先用一張照片讓新舊模型各辨識一次再決定。
 - 選定的模型存在 Supabase `app_secrets.gemini_model`，由資料庫函式 `set_gemini_model()` 寫入（只有允許名單上的帳號能呼叫，只接受 `gemini-` 開頭的名稱）；各裝置登入時由 `js/auth.js` 帶進瀏覽器，重新整理網頁後生效。
 - 選的模型失效時（被下架、名稱錯誤），拍照辨識會自動退回 `config.js` 的預設模型。

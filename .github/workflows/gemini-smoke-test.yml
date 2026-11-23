@@ -47,7 +47,7 @@ jobs:
       - name: Extract current model from config.js
         id: model
         run: |
-          MODEL=$(grep -oE "GEMINI_MODEL:[[:space:]]*'[^']+'" config.js | sed "s/GEMINI_MODEL:[[:space:]]*'//;s/'//" || echo "gemini-2.5-flash")
+          MODEL=$(grep -oE "GEMINI_MODEL:[[:space:]]*'[^']+'" config.js | sed "s/GEMINI_MODEL:[[:space:]]*'//;s/'//" || echo "gemini-3.1-flash-lite")
           echo "current_model=$MODEL" >> $GITHUB_OUTPUT
           echo "📌 當下設定模型: $MODEL"
 
@@ -59,7 +59,7 @@ jobs:
           set -e
           echo "📡 呼叫 ListModels API..."
           RES=$(curl -sS -w "\nHTTP_%{http_code}" \
-            "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY")
+            "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=$GEMINI_API_KEY")
           HTTP_CODE=$(echo "$RES" | tail -1 | sed 's/HTTP_//')
           BODY=$(echo "$RES" | sed '$d')
 
