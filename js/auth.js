@@ -50,6 +50,28 @@
     }
   }
 
+  // 🔐 允許名單：真正的把關在資料庫（RLS），這裡只負責給名單外的人清楚的說明
+  // 回傳 true / false；查不到（例如斷網）回傳 null，不把人踢出去
+  async function checkAllowed() {
+    try {
+      const { data, error } = await sb.rpc('is_allowed_user');
+      if (error) { console.warn('[auth] allowlist check error:', error); return null; }
+      return data === true;
+    } catch (e) {
+      console.warn('[auth] allowlist check failed:', e);
+      return null;
+    }
+  }
+
+  async function rejectNotAllowed(email) {
+    alert(`這個帳號還沒有開通使用權限。
+
+帳號：${email}
+
+本系統只開放給名單上的教職員，請聯絡資訊組開通。`);
+    await sb.auth.signOut();
+  }
+
   async function initSession() {
     const { data: { session } } = await sb.auth.getSession();
     currentUser = session?.user || null;
@@ -63,6 +85,13 @@
         await sb.auth.signOut();
         currentUser = null;
       }
+    }
+
+    // 允許名單檢查（名單外：說明後登出）
+    if (currentUser && (await checkAllowed()) === false) {
+      localStorage.removeItem('smes_gemini_api_key');
+      await rejectNotAllowed(currentUser.email || '');
+      currentUser = null;
     }
 
     // 登入成功 → 載入 Gemini API Key 到 localStorage
@@ -79,6 +108,11 @@
       if (newUser && !newUser.email?.endsWith('@' + ALLOWED_DOMAIN)) {
         alert(`此系統僅限 @${ALLOWED_DOMAIN} 帳號使用，將為您登出。`);
         await sb.auth.signOut();
+        return;
+      }
+      if (newUser && event === 'SIGNED_IN' && (await checkAllowed()) === false) {
+        localStorage.removeItem('smes_gemini_api_key');
+        await rejectNotAllowed(newUser.email || '');
         return;
       }
       currentUser = newUser;

@@ -3,7 +3,7 @@
  * 前端：https://cagoooo.github.io/smes-inventory/scrap.html
  *
  * 安全：每個請求都要帶 Supabase 登入 token，後端向 Supabase 查使用者，
- *       只接受 @mail2.smes.tyc.edu.tw 學校帳號（與盤點系統同一套登入）。
+ *       必須是學校帳號，而且在資料庫的允許名單（public.allowed_users）裡才放行。
  *       下面兩個值是盤點系統前端本來就公開的專案網址與 publishable key，不是密碼。
  */
 var SUPABASE_URL = 'https://xcnmmaayrtiklntvhdhc.supabase.co';
@@ -66,6 +66,15 @@ function verifyUser_(token) {
   var email = String(JSON.parse(res.getContentText()).email || '').toLowerCase();
   if (email.slice(-(ALLOWED_DOMAIN.length + 1)) !== '@' + ALLOWED_DOMAIN) {
     throw new Error('此系統僅限 @' + ALLOWED_DOMAIN + ' 學校帳號');
+  }
+  // 允許名單只維護在資料庫一處（public.allowed_users），用使用者自己的憑證去問
+  var chk = UrlFetchApp.fetch(SUPABASE_URL + '/rest/v1/rpc/is_allowed_user', {
+    method: 'post', contentType: 'application/json', payload: '{}',
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  });
+  if (chk.getResponseCode() !== 200 || chk.getContentText().trim() !== 'true') {
+    throw new Error('此帳號不在允許名單，請聯絡資訊組開通');
   }
   cache.put(key, email, 600);
   return email;
