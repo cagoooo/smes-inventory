@@ -6,3 +6,6 @@ Thumbs.db
 *.log
 .env
 .env.local
+
+gas/.clasp.json
+.clasprc.json

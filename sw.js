@@ -3,7 +3,7 @@
 //   - 靜態資源 (HTML/CSS/JS/icon/CDN)：cache-first
 //   - Supabase REST/Storage API：network-first，失敗則讀 cache
 //   - 照片 URL (Supabase Storage CDN)：stale-while-revalidate
-const CACHE_VERSION = 'smes-v7.4.14-2026-11-18a';
+const CACHE_VERSION = 'smes-v7.5.0-2026-11-23a';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const DATA_CACHE = `data-${CACHE_VERSION}`;
 const PHOTO_CACHE = `photo-${CACHE_VERSION}`;
@@ -13,6 +13,9 @@ const PRECACHE = [
   './',
   './index.html',
   './manage.html',
+  './scrap.html',
+  './css/scrap.css',
+  './js/scrap.js',
   './config.js',
   './manifest.json',
   './icon.svg',

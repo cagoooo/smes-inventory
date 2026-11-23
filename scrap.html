@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <!-- 🛡️ App 內建瀏覽器防護：Google OAuth 禁止在 WebView 登入（403 disallowed_useragent） -->
+    <script>
+        (function () {
+            var ua = navigator.userAgent || "";
+            var isLine = /\bLine\//i.test(ua);
+            var isOtherInApp = /FBAN|FBAV|FB_IAB|Instagram|Messenger|MicroMessenger|KAKAOTALK/i.test(ua);
+            var isAndroid = /Android/i.test(ua);
+
+            if (isLine && location.search.indexOf("openExternalBrowser=1") === -1) {
+                var sep = location.search ? "&" : "?";
+                location.replace(location.href.split("#")[0] + sep + "openExternalBrowser=1" + location.hash);
+                return;
+            }
+            if (!isOtherInApp && !isLine) return;
+
+            var chromeIntent = "";
+            if (isAndroid) {
+                var fallback = location.href.split("#")[0]
+                    + (location.search ? "&" : "?") + "iabEscape=1" + location.hash;
+                chromeIntent = "intent://" + location.host + location.pathname + location.search + location.hash
+                    + "#Intent;scheme=" + location.protocol.replace(":", "")
+                    + ";package=com.android.chrome"
+                    + ";S.browser_fallback_url=" + encodeURIComponent(fallback) + ";end";
+            }
+            var autoJump = false;
+            if (chromeIntent) {
+                autoJump = location.search.indexOf("iabEscape=1") === -1;
+                try { autoJump = autoJump && sessionStorage.getItem("iabEscapeTried") !== "1"; } catch (e) { }
+            }
+
+            document.addEventListener("DOMContentLoaded", function () {
+                var d = document.createElement("div");
+                d.id = "inapp-browser-guide";
+                d.style.cssText = "position:fixed;inset:0;z-index:99999;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,'Microsoft JhengHei',sans-serif;";
+                var chromeBtn = chromeIntent
+                    ? '<a id="inapp-open-chrome" href="' + chromeIntent.replace(/"/g, "&quot;") + '" style="display:block;margin:22px 0 4px;padding:14px 18px;border-radius:999px;background:#22c55e;color:#052e16;font-size:17px;font-weight:800;text-decoration:none;">用 Chrome 開啟</a>'
+                        + '<p style="font-size:13px;color:#94a3b8;margin:8px 0 18px;">按了沒反應，再照下面的方法</p>'
+                    : "";
+                d.innerHTML = '<div style="max-width:420px;width:100%;box-sizing:border-box;text-align:center;background:#1e293b;border-radius:16px;padding:32px 26px;">'
+                    + '<div style="font-size:52px;">🌐</div>'
+                    + '<h4 style="font-weight:800;margin:14px 0 10px;">請改用瀏覽器開啟</h4>'
+                    + '<p style="font-size:15px;line-height:1.8;color:#cbd5e1;margin:0;">您目前在 <b style="color:#fbbf24;">App 內建瀏覽器</b>（LINE／FB 等）中開啟本頁，Google 基於安全政策<b>禁止在此環境登入</b>。</p>'
+                    + chromeBtn
+                    + '<p style="font-size:15px;line-height:1.8;color:#cbd5e1;margin:' + (chromeIntent ? "0" : "14px 0 0") + ';">請點右上／右下角「<b>⋯</b>」→ 選「<b style="color:#4ade80;">用預設瀏覽器開啟</b>」。</p>'
+                    + '</div>';
+                document.body.appendChild(d);
+                if (autoJump) {
+                    try { sessionStorage.setItem("iabEscapeTried", "1"); } catch (e) { }
+                    setTimeout(function () { location.href = chromeIntent; }, 300);
+                }
+            });
+        })();
+    </script>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="報廢點收">
+<meta name="theme-color" content="#c2410c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>電腦報廢點收｜石門國小</title>
+<link rel="stylesheet" href="css/style.css?v=7.5.0">
+<link rel="stylesheet" href="css/scrap.css?v=7.5.0">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="scrap-page">
+
+<!-- 登入畫面 -->
+<div id="loginScreen" class="login-screen scrap-login">
+  <div class="login-card">
+    <div class="login-logo">🗑️</div>
+    <h1>電腦財產報廢點收</h1>
+    <p class="login-subtitle">拍照辨識 · 對應財產清冊 · 即時寫入報廢試算表</p>
+    <button class="google-signin-btn" onclick="SMES_AUTH.signIn()">
+      <svg width="20" height="20" viewBox="0 0 48 48">
+        <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z"/>
+        <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+        <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.5 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
+        <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C41.4 35.2 44 30 44 24c0-1.3-.1-2.6-.4-3.9z"/>
+      </svg>
+      用 Google 登入
+    </button>
+    <p class="login-note">
+      🔒 資訊組專用，限定 <b>@mail2.smes.tyc.edu.tw</b> 學校帳號
+    </p>
+  </div>
+
+  <footer class="login-footer">
+    <div class="login-footer__brand">
+      <img src="icon.svg" alt="" width="44" height="44">
+      <div><strong>電腦財產報廢點收</strong><span>石門國小盤點系統・資訊組專用</span></div>
+    </div>
+    <ul class="login-footer__points">
+      <li><span class="lf-icon" aria-hidden="true">📷</span><div><strong>邊拍邊找</strong><small>拍主機、螢幕或財產標籤</small></div></li>
+      <li><span class="lf-icon" aria-hidden="true">🎯</span><div><strong>自動對應</strong><small>從財產清冊找出最接近的一筆</small></div></li>
+      <li><span class="lf-icon" aria-hidden="true">🖨️</span><div><strong>一鍵列印</strong><small>整理成報廢清冊交給總務處</small></div></li>
+    </ul>
+    <div class="login-footer__bottom">
+      <p class="site-credit">Made with <span class="site-credit__heart" aria-label="愛心">❤️</span> by
+      <a href="https://cagoooo.github.io/Akai/" target="_blank" rel="noopener noreferrer" title="阿凱老師教育科技創新專區" class="site-credit__author">阿凱老師</a><span class="footer-school"><span class="footer-dot" aria-hidden="true">・</span>桃園市龍潭區石門國民小學</span></p>
+      <span class="footer-version">v7.5.0</span>
+    </div>
+  </footer>
+</div>
+
+<!-- App 主體 -->
+<div id="appShell" style="display:none;">
+
+<div class="topbar scrap-topbar no-print">
+  <span class="logo">🗑️</span>
+  <div class="title">電腦報廢點收
+    <div class="subtitle">拍照 → 找出財產 → 加入報廢清單</div>
+  </div>
+  <a class="nav-btn list-jump" href="#listCard" data-tooltip="看報廢清單">📋 <b id="topCount">0</b></a>
+  <button class="nav-btn" onclick="location.href='index.html'" data-tooltip="回盤點">📷 盤點</button>
+  <button class="nav-btn" onclick="location.href='manage.html'" data-tooltip="管理後台">📊</button>
+  <div id="userChip" class="user-chip" style="display:none;"></div>
+</div>
+
+<main class="scrap-main no-print">
+
+  <!-- 批次設定 -->
+  <section class="scrap-setup card">
+    <div class="setup-field">
+      <label for="batchInput">📁 報廢批次</label>
+      <input id="batchInput" list="batchList" autocomplete="off" placeholder="例：115學年度 電腦教室汰換">
+      <datalist id="batchList"></datalist>
+    </div>
+    <div class="setup-field">
+      <label for="locationSelect">📍 設備原本放在哪（可提高準確度）</label>
+      <select id="locationSelect"><option value="">不限地點</option></select>
+    </div>
+    <div class="setup-status" id="setupStatus">財產清冊載入中…</div>
+  </section>
+
+  <div class="scrap-grid">
+
+    <!-- 左：拍照與比對 -->
+    <section class="scrap-left">
+
+      <div class="card capture-card" id="captureCard">
+        <div class="part-title">這張要拍的是</div>
+        <div class="part-seg" id="partSeg">
+          <button type="button" class="part-btn active" data-part="主機">🖥️ 主機<small>機身／銘牌</small></button>
+          <button type="button" class="part-btn" data-part="螢幕">🖵 螢幕<small>背面銘牌</small></button>
+          <button type="button" class="part-btn" data-part="財產標籤">🏷️ 財產標籤<small>最準確</small></button>
+        </div>
+        <div class="capture-actions">
+          <label class="btn-scrap-capture" for="shotCamera">
+            <span class="ico">📷</span><span>拍照辨識</span>
+            <input id="shotCamera" type="file" accept="image/*" capture="environment">
+          </label>
+          <button type="button" class="btn-scrap-sub" id="btnLive">🎥 Live 相機</button>
+          <label class="btn-scrap-sub" for="shotLibrary">🖼️ 相簿
+            <input id="shotLibrary" type="file" accept="image/*">
+          </label>
+        </div>
+        <p class="capture-tip">💡 有財產標籤就拍標籤，編號一對就是 100%；沒有標籤再拍銘牌（型號貼紙）。</p>
+      </div>
+
+      <!-- 辨識結果 -->
+      <div class="card result-card" id="resultCard" style="display:none;">
+        <div class="shot-head">
+          <img id="shotPreview" alt="拍攝照片">
+          <div class="shot-info">
+            <div class="shot-status" id="shotStatus">AI 辨識中…</div>
+            <div class="ai-chips" id="aiChips"></div>
+          </div>
+          <button type="button" class="shot-close" id="btnCloseShot" aria-label="關閉">✕</button>
+        </div>
+        <div id="groupNotice"></div>
+        <div class="cand-list" id="candList"></div>
+      </div>
+
+      <!-- 手動搜尋 -->
+      <div class="card search-card">
+        <label for="manualSearch" class="search-title">🔎 找不到？直接搜尋財產清冊</label>
+        <input id="manualSearch" type="search" placeholder="輸入財產編號、型號或地點，例：000812、M800、C212" autocomplete="off">
+        <div class="cand-list" id="searchList"></div>
+      </div>
+
+    </section>
+
+    <!-- 右：報廢清單 -->
+    <aside class="scrap-right">
+      <div class="card list-card" id="listCard">
+        <div class="list-head">
+          <div>
+            <div class="list-title">📋 待報廢清單</div>
+            <div class="list-batch" id="listBatch">-</div>
+          </div>
+          <div class="list-count"><b id="listCount">0</b><span>台</span></div>
+        </div>
+        <div class="list-sum" id="listSum"></div>
+        <div class="list-tools">
+          <button type="button" class="btn btn-primary" id="btnPrint">🖨️ 列印報廢清冊</button>
+          <button type="button" class="btn btn-ghost" id="btnExport">⬇️ Excel</button>
+          <a class="btn btn-ghost" id="btnSheet" target="_blank" rel="noopener" href="#">📗 試算表</a>
+          <button type="button" class="btn btn-ghost" id="btnRefresh" aria-label="重新整理">↻</button>
+        </div>
+        <div class="list-items" id="listItems"><div class="list-empty">尚未加入任何設備</div></div>
+      </div>
+    </aside>
+
+  </div>
+
+  <footer class="scrap-footer">
+    <div class="scrap-footer__inner">
+      <div class="scrap-footer__brand">
+        <img src="icon.svg" alt="" width="48" height="48">
+        <div><strong>電腦財產報廢點收</strong><span>石門國小盤點系統・資訊組專用</span></div>
+      </div>
+      <ul class="scrap-footer__points">
+        <li><span aria-hidden="true">🏷️</span><div><strong>標籤最準</strong><small>財產編號對上就是 100%</small></div></li>
+        <li><span aria-hidden="true">🧮</span><div><strong>同型號提示</strong><small>外觀一樣的機器會提醒拍標籤</small></div></li>
+        <li><span aria-hidden="true">📗</span><div><strong>即時寫入</strong><small>每一筆都同步到報廢試算表</small></div></li>
+      </ul>
+      <nav class="scrap-footer__links">
+        <a href="index.html">📷 回盤點</a>
+        <a href="manage.html">📊 管理後台</a>
+        <a id="footerSheetLink" href="#" target="_blank" rel="noopener">📗 報廢試算表</a>
+      </nav>
+    </div>
+    <div class="scrap-footer__bottom">
+      <p class="site-credit">Made with <span class="site-credit__heart" aria-label="愛心">❤️</span> by
+        <a href="https://cagoooo.github.io/Akai/" target="_blank" rel="noopener noreferrer" title="阿凱老師教育科技創新專區" class="site-credit__author">阿凱老師</a><span class="footer-school"><span class="footer-dot" aria-hidden="true">・</span>桃園市龍潭區石門國民小學</span></p>
+      <span class="footer-version">v7.5.0</span>
+    </div>
+  </footer>
+</main>
+
+<!-- 列印區（只在列印時顯示） -->
+<div id="printArea" class="print-area"></div>
+
+<div class="toast" id="toast"></div>
+
+</div><!-- /appShell -->
+
+<script src="config.js?v=7.5.0"></script>
+<script src="js/auth.js?v=7.5.0"></script>
+<script src="js/supabase-client.js?v=7.5.0"></script>
+<script src="js/camera.js?v=7.5.0"></script>
+<script src="js/gemini.js?v=7.5.0"></script>
+<script src="js/error-monitor.js?v=7.5.0"></script>
+<script src="js/version-check.js?v=7.5.0"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(e => console.warn('[SW] register fail', e));
+  }
+  SMES_CAMERA.ensureUI();
+  SMES_AUTH.initClient();
+  SMES_AUTH.initSession();
+  SMES_AUTH.onReady(user => {
+    if (user) {
+      const s = document.createElement('script');
+      s.src = 'js/scrap.js?v=7.5.0';
+      document.body.appendChild(s);
+    }
+  });
+</script>
+</body>
+</html>
