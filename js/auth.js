@@ -30,7 +30,7 @@
       const C = window.SMES_CONFIG;
       const userToken = (await sb.auth.getSession())?.data?.session?.access_token;
       if (!userToken) return;
-      const res = await fetch(`${C.SUPABASE_URL}/rest/v1/app_secrets?key=eq.gemini_api_key&select=value`, {
+      const res = await fetch(`${C.SUPABASE_URL}/rest/v1/app_secrets?key=in.(gemini_api_key,gemini_model)&select=key,value`, {
         headers: {
           apikey: C.SUPABASE_ANON_KEY,
           Authorization: `Bearer ${userToken}`
@@ -41,10 +41,15 @@
         return;
       }
       const rows = await res.json();
-      if (rows?.[0]?.value) {
-        localStorage.setItem('smes_gemini_api_key', rows[0].value);
+      const byKey = {};
+      (Array.isArray(rows) ? rows : []).forEach((r) => { byKey[r.key] = r.value; });
+      if (byKey.gemini_api_key) {
+        localStorage.setItem('smes_gemini_api_key', byKey.gemini_api_key);
         console.log('[app_secrets] Gemini key loaded');
       }
+      // 後台「🤖 AI 模型」選定的辨識模型；沒設定就用 config.js 的預設
+      if (byKey.gemini_model) localStorage.setItem('smes_gemini_model', byKey.gemini_model);
+      else localStorage.removeItem('smes_gemini_model');
     } catch (e) {
       console.warn('[app_secrets] error:', e);
     }

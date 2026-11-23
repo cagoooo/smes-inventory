@@ -2,6 +2,40 @@
 (function() {
   const KEY_STORAGE = 'smes_gemini_api_key'; // 保留作為離線/備援用
 
+  // ============ 辨識模型 ============
+  // 預設寫在 config.js；後台「🤖 AI 模型」可以改，改完存在資料庫（app_secrets.gemini_model），
+  // 登入時由 auth.js 帶進 localStorage，所有裝置都會跟著換。
+  const MODEL_STORAGE = 'smes_gemini_model';
+  const MODEL_NAME_RE = /^gemini-[a-z0-9.\-]{2,60}$/;
+  function defaultModel() { return window.SMES_CONFIG.GEMINI_MODEL || 'gemini-2.5-flash'; }
+  function getModel() {
+    let m = '';
+    try { m = (localStorage.getItem(MODEL_STORAGE) || '').trim(); } catch (e) { /* ignore */ }
+    return MODEL_NAME_RE.test(m) ? m : defaultModel();
+  }
+
+  // ============ 防「照抄範例」 ============
+  // 標籤太小或太糊時，AI 偶爾會把提示詞裡的範例值當成答案填回來
+  // （2026-05-06 實際發生過：真正是 314010103-000734，AI 回了範例 3020112-0001）。
+  // 確定是範例的值清掉，並標記 example_echo，讓畫面提醒「靠近重拍」。
+  function stripExampleEcho(p) {
+    if (!p || typeof p !== 'object') return p;
+    const same = (v, ex) => String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase() === ex;
+    let pnEcho = false;
+    let echo = false;
+    if (same(p.serial_number, 'ABC123456')) { p.serial_number = null; echo = true; }
+    if (same(p.property_number, '3020112-0001')) { p.property_number = null; pnEcho = true; }
+    // 000551 有可能是真的財產，只有其他範例值也一起出現時才當成照抄
+    const modelEcho = same(p.model, 'EXPERTCENTERD500SC');
+    if (same(p.property_number, '000551') && (echo || modelEcho || same(p.notes, '外觀良好'))) {
+      p.property_number = null; pnEcho = true;
+      if (modelEcho) p.model = null;
+    }
+    if (pnEcho) { p.roc_year = null; p.ad_year = null; }  // 編號是抄的，年份也不可信
+    if (echo || pnEcho) p.example_echo = true;
+    return p;
+  }
+
   // ============ 等待上限 ============
   // 一次辨識（直連＋備援加起來）最多等 30 秒，網路卡住時不會一直轉圈。
   const RECOGNIZE_TIMEOUT_MS = 30000;
@@ -133,13 +167,13 @@
 
   // ============ 直連 Gemini API（主要方式）============
   // Key 存在 localStorage，由 auth.js 登入成功後從 app_secrets 表讀取
-  async function recognizeDirect(file, hintType = 'auto', deadline = 0) {
+  async function recognizeDirect(file, hintType = 'auto', deadline = 0, modelOverride = '') {
     const key = localStorage.getItem(KEY_STORAGE) || window.SMES_CONFIG.GEMINI_API_KEY;
     if (!key) throw new Error('Gemini API Key 尚未載入，請重新整理頁面');
 
     const compressed = await compressImage(file);
     const b64 = await fileToBase64(compressed);
-    const model = window.SMES_CONFIG.GEMINI_MODEL || 'gemini-2.5-flash';
+    let model = modelOverride || getModel();
 
     // 📝 Prompt：用「具體範例」而非「型別描述」避免 Gemini 把「整數」當字面值寫入
     const BASE_JSON = `必須輸出的 JSON 範例格式（屬性名稱要用雙引號，不要加任何註解）：
@@ -178,32 +212,67 @@
     }
     const PROMPT = `你是台灣國小財產盤點 AI 視覺辨識助手。\n\n${focus}\n\n${BASE_JSON}`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-    const t0 = performance.now();
-    const res = await fetchUntil(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [
-          { text: PROMPT },
-          { inline_data: { mime_type: 'image/jpeg', data: b64 } }
-        ]}],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-          maxOutputTokens: 2048,
-          // 🧠 關鍵：Gemini 2.5 系列預設啟用 thinking mode，會吃掉 output token 額度
-          // 導致 JSON 在 "confidence": 處被截斷。設為 0 強制關閉 thinking
-          thinkingConfig: { thinkingBudget: 0 }
+    // 送出一次請求。thinkingOff=true 會帶「關閉思考」的參數（2.5 系列需要，否則 JSON 會被截斷）；
+    // 有些新模型不接受這個參數，會回 400，這時改成不帶參數、把輸出上限加大再送一次。
+    const callOnce = (m, thinkingOff) => fetchUntil(
+      `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(key)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [
+            { text: PROMPT },
+            { inline_data: { mime_type: 'image/jpeg', data: b64 } }
+          ]}],
+          generationConfig: Object.assign({
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+            maxOutputTokens: thinkingOff ? 2048 : 8192
+          }, thinkingOff ? { thinkingConfig: { thinkingBudget: 0 } } : {})
+        })
+      }, deadline);
+
+    let thinkingMode = 'off';
+    const callModel = async (m) => {
+      thinkingMode = 'off';
+      let res = await callOnce(m, true);
+      if (res.status === 400) {
+        const t400 = await res.text().catch(() => '');
+        if (/thinking/i.test(t400)) {
+          console.warn(`[gemini] ${m} 不接受關閉思考的參數，改用預設思考設定重送`);
+          thinkingMode = 'default';
+          res = await callOnce(m, false);
+        } else {
+          const e400 = new Error(`Gemini API 400: ` + t400.slice(0, 200));
+          e400.modelUnavailable = true;
+          throw e400;
         }
-      })
-    }, deadline);
-    if (!res.ok) {
-      const t = await res.text().catch(() => '');
-      if (res.status === 429) throw new Error('Gemini 配額不足或請求過多，請稍後再試');
-      throw new Error(`Gemini API ${res.status}: ` + t.slice(0, 200));
+      }
+      if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        if (res.status === 429) throw new Error('Gemini 配額不足或請求過多，請稍後再試');
+        const err = new Error(`Gemini API ${res.status}: ` + t.slice(0, 200));
+        if (res.status === 404 || res.status === 400) err.modelUnavailable = true;
+        throw err;
+      }
+      return res.json();
+    };
+
+    const t0 = performance.now();
+    let json;
+    let fallbackFrom = null;
+    try {
+      json = await callModel(model);
+    } catch (e) {
+      // 後台選的模型失效（被下架、名稱打錯）→ 自動退回 config.js 的預設模型，不讓現場卡住
+      if (e.modelUnavailable && !modelOverride && model !== defaultModel()) {
+        console.warn(`[gemini] 模型 ${model} 無法使用，退回預設 ${defaultModel()}：`, e.message);
+        fallbackFrom = model;
+        model = defaultModel();
+        json = await callModel(model);
+      } else {
+        throw e;
+      }
     }
-    const json = await res.json();
     const elapsedMs = Math.round(performance.now() - t0);
 
     // 📊 A2: 印 finishReason + usageMetadata,以後診斷 MAX_TOKENS / thinking mode 問題很方便
@@ -218,7 +287,7 @@
 
     // 🚨 警示：finishReason === MAX_TOKENS 表示 budget 不夠 → 提示使用者或開發者
     if (finishReason === 'MAX_TOKENS') {
-      console.warn(`[gemini] ⚠️ MAX_TOKENS 觸發！JSON 可能被截斷。目前 maxOutputTokens=2048，thinking 吃了 ${thoughtsTokens} tokens。建議：增加 maxOutputTokens 或確認 thinkingBudget=0`);
+      console.warn(`[gemini] ⚠️ MAX_TOKENS 觸發！JSON 可能被截斷。thinking 吃了 ${thoughtsTokens} tokens。建議：增加 maxOutputTokens 或確認 thinkingBudget=0`);
     }
     if (finishReason === 'SAFETY') {
       console.warn(`[gemini] ⚠️ 被 SAFETY filter 擋下，safetyRatings:`, candidate?.safetyRatings);
@@ -233,6 +302,8 @@
     const meta = {
       source: 'gemini-direct',
       model,
+      fallbackFrom,
+      thinkingMode,
       finishReason,
       elapsedMs,
       thoughtsTokens,
@@ -311,7 +382,9 @@
   async function recognize(file, hintType = 'auto') {
     const deadline = Date.now() + RECOGNIZE_TIMEOUT_MS;
     try {
-      return await recognizeWithin(file, hintType, deadline);
+      const r = await recognizeWithin(file, hintType, deadline);
+      stripExampleEcho(r && r.parsed);
+      return r;
     } catch (e) {
       // 中斷連線的錯誤訊息是英文（AbortError），統一換成看得懂的說明
       throw isTimeout(e) ? timeoutError() : e;
@@ -359,6 +432,32 @@
     return await recognizeViaProxy(file, hintType, deadline);
   }
 
+  // 後台試拍用：指定模型辨識一次（只走直連，不退回預設、不走備援，才能看到該模型真正的表現）
+  async function recognizeWith(file, hintType, model, timeoutMs = 60000) {
+    try {
+      const r = await recognizeDirect(file, hintType || 'auto', Date.now() + timeoutMs, model);
+      stripExampleEcho(r.parsed);
+      return r;
+    } catch (e) {
+      if (isTimeout(e)) { const te = new Error(`等了 ${Math.round(timeoutMs / 1000)} 秒沒有回應`); te.timeout = true; throw te; }
+      throw e;
+    }
+  }
+
+  // 後台用：列出這把金鑰可以用來看圖的 Gemini 模型
+  async function listModels() {
+    const key = localStorage.getItem(KEY_STORAGE) || window.SMES_CONFIG.GEMINI_API_KEY || await fetchKeyFromDBOnDemand();
+    if (!key) throw new Error('Gemini API Key 尚未載入，請重新整理頁面');
+    const res = await fetchUntil(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(key)}`, {}, Date.now() + 15000);
+    if (!res.ok) throw new Error(`讀取模型清單失敗（${res.status}）`);
+    const j = await res.json();
+    return (j.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map((m) => ({ name: String(m.name || '').replace('models/', ''), displayName: m.displayName || '' }))
+      .filter((m) => MODEL_NAME_RE.test(m.name) && /flash|pro/.test(m.name)
+        && !/tts|audio|image|embedding|live|computer|robotics|customtools/.test(m.name));
+  }
+
   function hasKey() {
     // 永遠 true — 因為後端代理已有 Key
     return true;
@@ -366,5 +465,5 @@
   function setKey(k) { localStorage.setItem(KEY_STORAGE, k.trim()); }
   function getKey() { return localStorage.getItem(KEY_STORAGE) || ''; }
 
-  window.SMES_GEMINI = { recognize, hasKey, setKey, getKey, compressImage, RECOGNIZE_TIMEOUT_MS };
+  window.SMES_GEMINI = { recognize, recognizeWith, listModels, getModel, defaultModel, MODEL_STORAGE, hasKey, setKey, getKey, compressImage, RECOGNIZE_TIMEOUT_MS };
 })();

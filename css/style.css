@@ -3561,3 +3561,49 @@ label.btn-capture-inline { cursor: pointer; }
     opacity: 1; transform: translateX(-50%) translateY(0);
   }
 }
+
+/* ============ 後台：AI 辨識模型（2026-11-24） ============ */
+.ms-lead { font-size: 15px; color: var(--text-soft); line-height: 1.7; margin: 6px 0 16px; }
+.ms-current {
+  display: grid; gap: 2px; padding: 14px 16px; margin-bottom: 16px;
+  border-radius: 14px; background: var(--primary-soft, #eef6ff); border-left: 5px solid var(--primary, #2563eb);
+}
+.ms-current-label { font-size: 13px; font-weight: 700; color: var(--text-soft); }
+.ms-current-name { font-size: 22px; font-weight: 900; word-break: break-all; }
+.ms-current-note { font-size: 14px; color: var(--text-soft); }
+.ms-field { margin-bottom: 12px; }
+.ms-field select, .ms-field input[type="file"] { font-size: 16px; }
+.ms-picked { margin-top: 6px; font-size: 14px; color: var(--text-soft); min-height: 20px; }
+.ms-actions { gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.ms-actions .btn { min-height: 44px; }
+.ms-status { font-size: 15px; line-height: 1.6; min-height: 22px; }
+.ms-status.ok { color: #166534; }
+.ms-status.warn { color: #92400e; }
+.ms-status.err { color: var(--danger, #b91c1c); }
+.ms-status .spin, .ms-hint .spin {
+  display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: msSpin 0.8s linear infinite;
+}
+@keyframes msSpin { to { transform: rotate(360deg); } }
+.ms-test-row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+.ms-preview { display: block; max-width: 100%; max-height: 260px; border-radius: 12px; margin: 4px 0 12px; }
+.ms-preview[hidden] { display: none; }
+.ms-table-wrap { overflow-x: auto; margin-top: 12px; }
+.ms-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.ms-table th, .ms-table td { padding: 10px 12px; border-bottom: 1px solid var(--border, #e5e7eb); text-align: left; vertical-align: top; }
+.ms-table thead th { font-weight: 900; word-break: break-all; }
+.ms-table td { word-break: break-all; }
+.ms-table thead th small { display: block; font-size: 12px; font-weight: 700; color: var(--primary, #2563eb); }
+.ms-table tbody th { white-space: nowrap; color: var(--text-soft); font-weight: 700; width: 1%; }
+.ms-table td.ms-diff { background: #fef9c3; font-weight: 700; }
+.ms-muted { color: var(--text-soft); }
+.ms-bad { color: var(--danger, #b91c1c); font-weight: 700; }
+.ms-notes { margin: 12px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.7; }
+.ms-hint { font-size: 14px; color: var(--text-soft); line-height: 1.6; margin: 10px 0 0; }
+.ms-tips { margin: 8px 0 0; padding-left: 20px; font-size: 15px; line-height: 1.9; }
+@media (max-width: 640px) {
+  .ms-test-row { grid-template-columns: 1fr; }
+  .ms-current-name { font-size: 18px; }
+  .ms-actions .btn { flex: 1 1 100%; }
+}

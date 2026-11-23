@@ -190,6 +190,9 @@
     const last = groups[groups.length - 1] || '';
     if (last.length >= 3 && last.length <= 6 && last.padStart(6, '0') === target) return 'exact';
     if (groups.some((g) => g.length >= 5 && g.length <= 6 && g.padStart(6, '0') === target)) return 'exact';
+    // 條碼常把整串編號連在一起（例：314010103000734），最後 6 碼才是財產序號
+    const compact = raw.replace(/[\s\-_.\/]/g, '');
+    if (/^\d{12,18}$/.test(compact) && compact.endsWith(target)) return 'exact';
     if (last.length >= 4 && last.length <= 6 && window._generatePNVariants) {
       if (window._generatePNVariants(last.padStart(6, '0')).includes(target)) return 'fuzzy';
     }
@@ -583,6 +586,7 @@
   // 🎯 標籤／序號 100% 相符、只有一筆、還沒在清單 → 自動加入（可在畫面上關掉）
   function autoAddCandidate(cands) {
     if (!$('autoAddToggle').checked) return null;
+    if (state.shot && state.shot.source === 'qr' && state.shot.weak) return null;
     const top = cands[0];
     if (!top || top.score < 100) return null;
     if (cands.filter((c) => c.score >= 100).length !== 1) return null;
@@ -628,7 +632,9 @@
     try {
       let parsed;
       try {
-        ({ parsed } = await SMES_GEMINI.recognize(file, hint));
+        let meta;
+        ({ parsed, meta } = await SMES_GEMINI.recognize(file, hint));
+        shot.meta = meta || null;
       } finally {
         clearInterval(waitTimer);
       }
@@ -671,10 +677,23 @@
     return { auto: r.ok, cands, rec: auto.rec, queued: r.queued };
   }
 
-  // ================= 掃二維條碼 =================
+  // ================= 掃條碼（一維、二維都可以） =================
   let qrScanner = null;
   let qrBusy = false;
   let qrLast = { text: '', at: 0 };
+
+  // 掃描框：寬的長方形，長條形條碼（一維）和方形條碼（二維）都放得進去
+  function qrBoxSize(w, h) {
+    const bw = Math.max(120, Math.floor(w * 0.88));
+    const bh = Math.max(100, Math.min(Math.floor(h * 0.7), Math.floor(bw * 0.55)));
+    return { width: Math.min(bw, w), height: Math.min(bh, h) };
+  }
+
+  // 條碼內容像不像財產編號：只有數字和分隔符號，或是本系統自己印的 QR（網址帶 ?pn=）
+  function qrLooksLikePN(text) {
+    const t = String(text || '').trim();
+    return /[?&]pn=[\w\-]+/i.test(t) || /^[\d\s\-_.\/]{3,24}$/.test(t);
+  }
 
   function loadQrLib() {
     if (window.Html5Qrcode) return Promise.resolve();
@@ -697,13 +716,13 @@
     if (!currentBatch()) { toast('請先在上方輸入「報廢批次」名稱'); $('batchInput').focus(); return; }
     $('qrModal').hidden = false;
     document.body.style.overflow = 'hidden';
-    qrMsg('把財產標籤上的二維條碼放進框內，掃到會自動找財產');
+    qrMsg('把財產標籤上的條碼放進框內（長條形、方形都可以），掃到會自動找財產');
     try {
       await loadQrLib();
       qrScanner = new window.Html5Qrcode('qrReader', { verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
       await qrScanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } },
+        { fps: 10, qrbox: qrBoxSize },
         onQrDecoded,
         () => {}
       );
@@ -731,7 +750,7 @@
     if (navigator.vibrate) navigator.vibrate(30);
     qrMsg(`<span class="spin"></span> 掃到「${esc(String(text).slice(0, 40))}」，比對中…`);
 
-    const shot = { id: now, source: 'qr', file: null, ai: { photo_type: '財產標籤', property_number: String(text).trim() }, photoSent: true, thumbP: null };
+    const shot = { id: now, source: 'qr', file: null, ai: { photo_type: '財產標籤', property_number: String(text).trim() }, photoSent: true, thumbP: null, weak: !qrLooksLikePN(text) };
     state.shot = shot;
     state.showAll = false;
     $('resultCard').style.display = '';
@@ -754,6 +773,9 @@
     }
     // 沒有 100% 相符（或關掉自動加入）→ 關掉掃描，讓老師看候選清單自己選
     await closeQR();
+    if (top && shot.weak) {
+      $('shotStatus').innerHTML = '<span class="err">⚠️ 這個條碼不像財產編號（可能掃到旁邊的序號貼紙），請核對後再按「加入」</span>';
+    }
     if (!top) {
       $('shotStatus').innerHTML = '🤔 條碼內容在清冊裡找不到';
       $('candList').innerHTML = `<div class="cand-empty">條碼內容：<code>${esc(text)}</code><br>可以改拍照辨識，或用下方搜尋手動找。</div>`;
@@ -774,9 +796,17 @@
       ai.serial_number && ['序號', ai.serial_number],
       ai.roc_year && ['年份', `民國 ${ai.roc_year}`],
     ].filter(Boolean);
-    $('aiChips').innerHTML = chips.length
+    const meta = state.shot && state.shot.meta;
+    const modelChip = meta && meta.model
+      ? `<span class="ai-chip muted"><small>AI 模型</small>${esc(meta.model)}</span>` : '';
+    const fallbackNote = meta && meta.fallbackFrom
+      ? `<div class="ai-hint">⚠️ 後台選的模型「${esc(meta.fallbackFrom)}」目前無法使用，這次先改用預設模型。請到後台「🤖 AI 模型」重新選一個。</div>` : '';
+    const wantLabel = state.part === '財產標籤' || ai.photo_type === '財產標籤';
+    const retakeHint = ai.example_echo || (!ai.property_number && wantLabel)
+      ? '<div class="ai-hint">📏 沒讀到財產編號，標籤可能太小或太糊。請靠近到標籤佔畫面一半以上再拍一次，或改用「📱 掃條碼」。</div>' : '';
+    $('aiChips').innerHTML = (chips.length
       ? chips.map(([k, v]) => `<span class="ai-chip"><small>${esc(k)}</small>${esc(v)}</span>`).join('')
-      : '<span class="ai-chip muted">照片裡沒有讀到文字</span>';
+      : '<span class="ai-chip muted">照片裡沒有讀到文字</span>') + modelChip + retakeHint + fallbackNote;
   }
 
   function renderShotCandidates() {
@@ -1039,7 +1069,7 @@
       toast(e.target.checked ? '已開啟：編號 100% 相符就自動加入' : '已關閉自動加入，每台都要自己按「加入」');
     });
 
-    // 掃二維條碼
+    // 掃條碼
     $('btnQR').addEventListener('click', openQR);
     $('btnQrClose').addEventListener('click', closeQR);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('qrModal').hidden) closeQR(); });

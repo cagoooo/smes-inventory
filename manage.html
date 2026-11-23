@@ -71,7 +71,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>石門盤點 · 管理後台</title>
-<link rel="stylesheet" href="css/style.css?v=7.5.6">
+<link rel="stylesheet" href="css/style.css?v=7.5.7">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -133,6 +133,7 @@
     <button data-tab="report">📋 盤點報告</button>
     <button data-tab="qr">🏷 QR 標籤</button>
     <button data-tab="import">📥 匯入</button>
+    <button data-tab="aimodel">🤖 AI 模型</button>
   </div>
 
   <!-- Tab: 儀表板 -->
@@ -465,6 +466,69 @@
     </div>
   </div>
 
+  <!-- Tab: AI 辨識模型 -->
+  <div class="tab-content" id="tab-aimodel" style="display:none;">
+    <div class="card">
+      <h2>🤖 AI 辨識模型</h2>
+      <p class="ms-lead">
+        拍照辨識要請哪一位「AI 小幫手」來看照片，可以在這裡換人。
+        覺得辨識不準時，先到下面<b>試拍比較</b>，確定新的比較好再儲存。
+      </p>
+
+      <div class="ms-current" id="msCurrent"></div>
+
+      <div class="field ms-field">
+        <label for="msSelect">要改用的模型</label>
+        <select id="msSelect"></select>
+        <div class="ms-picked" id="msPicked"></div>
+      </div>
+
+      <div class="toolbar-row ms-actions">
+        <button type="button" class="btn btn-primary" id="msSave" disabled>💾 儲存</button>
+        <button type="button" class="btn btn-ghost" id="msReset">↩️ 改回預設</button>
+        <button type="button" class="btn btn-ghost" id="msReload">🔄 重新讀取清單</button>
+      </div>
+      <div class="ms-status" id="msStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>🧪 試拍比較</h2>
+      <p class="ms-lead">
+        選一張照片，讓「目前的模型」和「上面選的模型」各辨識一次，比較讀到的內容和花的時間。
+        試拍不會改設定，也不會寫入盤點資料。
+      </p>
+      <div class="ms-test-row">
+        <div class="field ms-field">
+          <label for="msFile">照片（財產標籤或機身）</label>
+          <input type="file" id="msFile" accept="image/*">
+        </div>
+        <div class="field ms-field">
+          <label for="msHint">這張拍的是</label>
+          <select id="msHint">
+            <option value="label">財產標籤</option>
+            <option value="device">機身／銘牌</option>
+          </select>
+        </div>
+      </div>
+      <img id="msPreview" class="ms-preview" alt="試拍照片預覽" hidden>
+      <div class="toolbar-row ms-actions">
+        <button type="button" class="btn btn-success" id="msTest">🧪 開始比較</button>
+      </div>
+      <div id="msResult"></div>
+    </div>
+
+    <div class="card">
+      <h3>💡 換模型前先知道</h3>
+      <ul class="ms-tips">
+        <li>儲存後，這台裝置馬上生效；手機或其他電腦要<b>重新整理網頁</b>才會換過去。</li>
+        <li>名稱有 <b>pro</b> 的通常比較準，但比較慢、費用也比較高；<b>flash-lite</b> 通常最快最省。實際費用以 Google 的公告為準。</li>
+        <li>名稱有 <b>preview</b> 的是預覽版，Google 可能隨時下架。</li>
+        <li>選的模型如果失效，拍照時會自動退回預設模型，現場不會卡住。</li>
+        <li>標籤拍得太小、太糊時，換哪一個模型都讀不到；先靠近重拍，再考慮換模型。</li>
+      </ul>
+    </div>
+  </div>
+
   <!-- Tab: 拍照紀錄 -->
   <div class="tab-content" id="tab-photos" style="display:none;">
     <div class="search-wrap" style="margin-bottom:8px;">
@@ -546,24 +610,26 @@
 </div><!-- /appShell -->
 
 <script src="config.js"></script>
-<script src="js/auth.js?v=7.5.6"></script>
-<script src="js/supabase-client.js?v=7.5.6"></script>
-<script src="js/floorplan.js?v=7.5.6"></script>
-<script src="js/dashboard.js?v=7.5.6"></script>
-<script src="js/qr-labels.js?v=7.5.6"></script>
-<script src="js/monthly-report.js?v=7.5.6"></script>
-<script src="js/veyon-export.js?v=7.5.6"></script>
-<script src="js/network-tools.js?v=7.5.6"></script>
-<script src="js/touchscreen-ports.js?v=7.5.6"></script>
-<script src="js/error-monitor.js?v=7.5.6"></script>
-<script src="js/version-check.js?v=7.5.6"></script>
+<script src="js/auth.js?v=7.5.7"></script>
+<script src="js/supabase-client.js?v=7.5.7"></script>
+<script src="js/floorplan.js?v=7.5.7"></script>
+<script src="js/dashboard.js?v=7.5.7"></script>
+<script src="js/qr-labels.js?v=7.5.7"></script>
+<script src="js/monthly-report.js?v=7.5.7"></script>
+<script src="js/veyon-export.js?v=7.5.7"></script>
+<script src="js/network-tools.js?v=7.5.7"></script>
+<script src="js/touchscreen-ports.js?v=7.5.7"></script>
+<script src="js/gemini.js?v=7.5.7"></script>
+<script src="js/model-settings.js?v=7.5.7"></script>
+<script src="js/error-monitor.js?v=7.5.7"></script>
+<script src="js/version-check.js?v=7.5.7"></script>
 <script>
   SMES_AUTH.initClient();
   SMES_AUTH.initSession();
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/manage.js?v=7.5.6';
+      s.src = 'js/manage.js?v=7.5.7';
       document.body.appendChild(s);
     }
   });
