@@ -237,6 +237,7 @@
               <span class="ra-pn">${i.property_number || '-'}</span>
               <span class="ra-model">${i.brand || ''} ${i.model || i.item_name || ''}</span>
               ${i.acquired_year ? `<span class="ra-year">${i.acquired_year}年</span>` : ''}
+              ${i.status === '待報廢' ? '<span class="ra-flag danger">待報廢</span>' : ''}
             </div>
           `).join('')}
           ${inventory.length > 10 ? `<div class="ra-more">+${inventory.length - 10} 台更多</div>` : ''}

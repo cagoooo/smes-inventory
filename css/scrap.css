@@ -209,6 +209,7 @@
   display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; vertical-align: 3px;
   background: #16a34a; color: #fff; font-size: 12px; font-family: system-ui, sans-serif; letter-spacing: 0;
 }
+.tag-in.other { background: #f59e0b; }
 .cand-model { font-size: 16px; font-weight: 700; margin-top: 2px; }
 .cand-spec { font-size: 13px; color: var(--text-soft); margin-top: 2px; line-height: 1.5; }
 .cand-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13.5px; color: var(--text-soft); margin-top: 6px; }

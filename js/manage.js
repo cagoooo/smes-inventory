@@ -225,6 +225,7 @@
               ${i.classroom_code ? `<span class="tag">${i.classroom_code}</span>` : ''}
               ${i.location_text && i.location_text !== i.classroom_code ? `<span class="tag" style="background:var(--bg);color:var(--text-soft);">${i.location_text}</span>` : ''}
               ${matchedIds.has(i.id) ? '<span class="tag" style="background:var(--success-soft);color:var(--success);">✓ 已拍</span>' : ''}
+              ${i.status === '待報廢' ? '<span class="tag" style="background:var(--danger-soft);color:var(--danger);">🗑️ 待報廢</span>' : ''}
             </div>
           </div>
           <button class="inv-history-btn" onclick="showInvHistory(${i.id}, '${(i.property_number || '').replace(/'/g, '')}');event.stopPropagation();">🕒 歷史</button>

@@ -134,6 +134,7 @@
     } finally {
       state.flushing = false;
       renderList(); rerenderCandidates(); setStatus();
+      if (sent) syncInventoryStatus();
     }
     if (sent) toast(`📤 已補送 ${sent} 筆到試算表${state.pending.length ? `，還有 ${state.pending.length} 筆等待中` : ''}`);
     else if (manual && stopMsg) toast('補送失敗：' + stopMsg);
@@ -285,6 +286,7 @@
       setSheetLinks();
       setStatus('ok');
       setTimeout(() => flushQueue(), 300);
+      syncInventoryStatus();
     } catch (e) {
       state.items = [];
       setStatus('gasError', e.message);
@@ -306,6 +308,14 @@
     });
   }
 
+  function syncSummary(items) {
+    if (!state.inventory.length) return '';
+    const sent = items.filter((i) => !i.pending && recByPN(i.propertyNumber));
+    if (!sent.length) return '';
+    const marked = sent.filter((i) => recByPN(i.propertyNumber).status === SCRAP_STATUS).length;
+    return `<br>📌 財產清冊已標「待報廢」<b>${marked}／${sent.length}</b>`;
+  }
+
   function renderList() {
     const items = allItems().sort((a, b) => (b.pending === true) - (a.pending === true) || String(b.addedAt).localeCompare(String(a.addedAt)));
     const nPend = state.pending.length;
@@ -321,7 +331,7 @@
     const host = items.filter((i) => /主機|筆電|財產標籤/.test(i.parts)).length;
     const mon = items.filter((i) => /螢幕/.test(i.parts)).length;
     $('listSum').innerHTML = items.length
-      ? `原始單價合計 <b>${money(total)}</b> · 已點到主機 ${host} · 螢幕 ${mon}`
+      ? `原始單價合計 <b>${money(total)}</b> · 已點到主機 ${host} · 螢幕 ${mon}${syncSummary(items)}`
       : '';
     renderProgress(items);
     if (!items.length) {
@@ -338,6 +348,72 @@
         </div>
         <button type="button" class="li-del" data-del="${esc(i.id)}" aria-label="移除 ${esc(i.propertyNumber)}">✕</button>
       </div>`).join('');
+  }
+
+  // ================= 同步財產清冊狀態（待報廢）=================
+  // 加入報廢清單 → 把盤點系統財產清冊的狀態改成「待報廢」，並寫一筆異動紀錄
+  // 移出報廢清單 → 改回原本的狀態（從異動紀錄查回，查不到就還原成「使用中」）
+  const SCRAP_STATUS = '待報廢';
+  const syncing = new Set();
+  let syncWarned = false;
+
+  function recByPN(pn) { return state.inventory.find((r) => r.property_number === pn); }
+
+  function auditRow(rec, oldV, newV, notes) {
+    const user = SMES_AUTH.getUser?.();
+    return {
+      inventory_id: rec.id, property_number: rec.property_number,
+      changed_by: user?.id || null, changed_by_email: user?.email || null,
+      field_changed: 'status', old_value: oldV, new_value: newV, source: 'scrap_list', notes,
+    };
+  }
+
+  async function setInvStatus(rec, newStatus, notes) {
+    const old = rec.status || null;
+    if (old === newStatus) return;
+    await SMES_DB.updateInventoryItem(rec.id, { status: newStatus });
+    rec.status = newStatus;
+    SMES_DB.insertAuditLogs([auditRow(rec, old, newStatus, notes)]).catch((e) => console.warn('[scrap] 異動紀錄寫入失敗', e));
+  }
+
+  // 清單裡已送達試算表的項目，清冊狀態還不是「待報廢」的就補標（也負責補救先前失敗的）
+  async function syncInventoryStatus() {
+    if (!state.inventory.length || navigator.onLine === false) return;
+    const todo = state.items.map((i) => ({ i, rec: recByPN(i.propertyNumber) }))
+      .filter((x) => x.rec && x.rec.status !== SCRAP_STATUS && !syncing.has(x.rec.id));
+    if (!todo.length) return;
+    todo.forEach((x) => syncing.add(x.rec.id));
+    let failed = 0;
+    await Promise.all(todo.map(async ({ i, rec }) => {
+      try { await setInvStatus(rec, SCRAP_STATUS, `加入報廢批次「${i.batch || currentBatch()}」`); }
+      catch (e) { failed++; console.warn('[scrap] 標記待報廢失敗', rec.property_number, e); }
+      finally { syncing.delete(rec.id); }
+    }));
+    if (failed && !syncWarned) { syncWarned = true; toast(`⚠️ 有 ${failed} 筆沒能在財產清冊標成待報廢，下次重新整理會再試`); }
+    renderList(); rerenderCandidates();
+  }
+
+  // 移出清單後還原狀態；若同一台還在別的報廢批次裡就不還原
+  async function revertInventoryStatus(pn, batch) {
+    const rec = recByPN(pn);
+    // 剛加入就按復原：等「標記待報廢」先跑完，才不會還原之後又被標回去
+    for (let n = 0; rec && syncing.has(rec.id) && n < 80; n++) await new Promise((r) => setTimeout(r, 100));
+    if (!rec || rec.status !== SCRAP_STATUS) return;
+    try {
+      const all = await gas('list', {});
+      if ((all.items || []).some((i) => i.propertyNumber === pn)) return;
+      let prev = '使用中';
+      try {
+        const logs = await SMES_DB.listAuditByInventory(rec.id, 50);
+        const hit = (logs || []).find((l) => l.field_changed === 'status' && l.new_value === SCRAP_STATUS);
+        if (hit && hit.old_value && hit.old_value !== SCRAP_STATUS) prev = hit.old_value;
+      } catch (e) { /* 查不到就用預設 */ }
+      await setInvStatus(rec, prev, `移出報廢批次「${batch}」`);
+      renderList(); rerenderCandidates();
+    } catch (e) {
+      console.warn('[scrap] 還原狀態失敗', pn, e);
+      toast(`⚠️ ${pn} 已移出清單，但財產清冊的狀態沒能還原，請到管理後台確認`);
+    }
   }
 
   // 📊 各教室／型號點收進度：清單裡每個「地點＋型號」在清冊中共有幾台、點到幾台、還差哪幾台
@@ -399,6 +475,7 @@
       await gas('remove', { id });
       state.items = state.items.filter((i) => i.id !== id);
       renderList(); rerenderCandidates();
+      revertInventoryStatus(it.propertyNumber, it.batch || currentBatch());
       toast(`已移除 ${it.propertyNumber}`, { label: '復原', fn: () => restoreItem(it) });
     } catch (e) { toast('移除失敗：' + e.message); }
   }
@@ -408,6 +485,7 @@
       await gas('restore', { id: it.id });
       state.items.push(it);
       renderList(); rerenderCandidates();
+      syncInventoryStatus();
       toast(`已復原 ${it.propertyNumber}`);
     } catch (e) { toast('復原失敗：' + e.message); }
   }
@@ -475,6 +553,7 @@
       else toast(`${prefix} ${rec.property_number}（清單共 ${allItems().length} 台）`, undo(data.item.id));
       if (!opts.stay) setTimeout(() => $('captureCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 700);
       flushQueue();
+      syncInventoryStatus();
       return { ok: true, merged: data.merged, itemId: data.item.id };
     } catch (e) {
       if (!e.network) {
@@ -740,7 +819,7 @@
     return `<div class="cand ${already ? 'in-list' : ''}">
       ${scoreTxt}
       <div class="cand-body">
-        <div class="cand-pn">${esc(r.property_number)} ${already ? '<span class="tag-in">已在清單</span>' : ''}</div>
+        <div class="cand-pn">${esc(r.property_number)} ${already ? '<span class="tag-in">已在清單</span>' : (r.status === SCRAP_STATUS ? '<span class="tag-in other">其他批次已列待報廢</span>' : '')}</div>
         <div class="cand-model">${esc(r.model || r.item_name)}</div>
         ${r.specification && r.specification !== r.model ? `<div class="cand-spec">${esc(r.specification)}</div>` : ''}
         <div class="cand-meta">
@@ -962,11 +1041,11 @@
     $('batchInput').value = localStorage.getItem(LS_BATCH) || `${SCHOOL_YEAR}學年度 電腦設備報廢`;
     bind();
     setStatus();
-    loadInventory().then(() => { renderSearch(); renderList(); });
+    loadInventory().then(() => { renderSearch(); renderList(); syncInventoryStatus(); });
     reloadPending().then(() => { renderList(); loadList(); });
   }
 
   // 給測試用（不影響正式功能）
-  window.SMES_SCRAP = { progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
+  window.SMES_SCRAP = { syncInventoryStatus, revertInventoryStatus, removeItem, progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
   init();
 })();
