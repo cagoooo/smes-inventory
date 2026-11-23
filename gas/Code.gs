@@ -42,6 +42,7 @@ function doPost(e) {
       case 'restore': return json_(setStatus_(body.id, '待報廢', email));
       case 'update': return json_(updateItem_(body));
       case 'log': return json_(appendLog_(body, email));
+      case 'purgeTestBatch': return json_(purgeTestBatch_(body.batch));
       default: return json_({ ok: false, error: '未知的動作：' + body.action });
     }
   } catch (err) {
@@ -221,7 +222,7 @@ function addItem_(body, email) {
       mergeParts_('', body.part), body.method || '', body.score === 0 || body.score ? String(body.score) : '',
       body.aiSummary || '', photoUrl, email, '待報廢', body.note || ''
     ];
-    sh.appendRow(row);
+    writeRow_(sh, row);
     var obj = {};
     LIST_HEADERS.forEach(function (h, j) { obj[h] = row[j]; });
     return { ok: true, merged: false, item: toClient_(obj) };
@@ -264,7 +265,7 @@ function updateItem_(body) {
 function appendLog_(body, email) {
   var a = body.ai || {};
   var m = body.best || {};
-  ss_().getSheetByName(SHEET_LOG).appendRow([
+  writeRow_(ss_().getSheetByName(SHEET_LOG), [
     now_(), email, body.part || '', a.photo_type || '', a.brand || '', a.model || '',
     a.property_number || '', a.serial_number || '', a.roc_year ? String(a.roc_year) : '',
     a.confidence === 0 || a.confidence ? String(a.confidence) : '',
@@ -275,6 +276,36 @@ function appendLog_(body, email) {
 }
 
 // ================= 工具 =================
+// 先把整列設成純文字再寫入，避免「000812」被試算表轉成數字 812、「105/10/20」被轉成日期
+function writeRow_(sh, row) {
+  var r = sh.getLastRow() + 1;
+  var rng = sh.getRange(r, 1, 1, row.length);
+  rng.setNumberFormat('@');
+  rng.setValues([row.map(function (v) { return v === null || v === undefined ? '' : String(v); })]);
+  return r;
+}
+
+// 只允許清除「【測試】」開頭的批次（系統驗證用），連同照片一起移到垃圾桶
+function purgeTestBatch_(batch) {
+  if (String(batch || '').indexOf('【測試】') !== 0) throw new Error('只能清除【測試】開頭的批次');
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var data = readList_();
+    var rows = data.rows.filter(function (o) { return o['報廢批次'] === batch; });
+    var trashed = 0;
+    rows.forEach(function (o) {
+      String(o['照片'] || '').split(/\s+/).forEach(function (u) {
+        var m = u.match(/\/d\/([-\w]{20,})/);
+        if (m) { try { DriveApp.getFileById(m[1]).setTrashed(true); trashed++; } catch (e) {} }
+      });
+    });
+    rows.sort(function (a, b) { return b._row - a._row; }).forEach(function (o) { data.sh.deleteRow(o._row); });
+    return { ok: true, deleted: rows.length, photosTrashed: trashed };
+  } finally {
+    lock.releaseLock();
+  }
+}
 function now_() { return Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss'); }
 
 function json_(o) {
