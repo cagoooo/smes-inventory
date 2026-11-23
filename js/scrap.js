@@ -6,7 +6,9 @@
   const SCHOOL_YEAR = new Date().getMonth() >= 7 ? ROC_NOW : ROC_NOW - 1;
   const LS_BATCH = 'smes_scrap_batch';
   const LS_LOC = 'smes_scrap_location';
+  const LS_AUTO = 'smes_scrap_auto_add';
   const SHOW_FIRST = 5;
+  const ADD_TIMEOUT_MS = 25000;
 
   const state = {
     inventory: [],
@@ -18,6 +20,8 @@
     shot: null,         // 目前這張照片
     lastCandidates: [],
     showAll: false,
+    pending: [],        // 網路不穩時先存在手機、等待補送的項目（IndexedDB）
+    flushing: false,
   };
 
   // ================= 小工具 =================
@@ -36,16 +40,23 @@
   }
 
   // ================= GAS 後端 =================
-  async function gas(action, payload = {}) {
+  function netError(msg) { const e = new Error(msg); e.network = true; return e; }
+
+  async function gas(action, payload = {}, timeoutMs = 0) {
     if (!C.SCRAP_GAS_URL) throw new Error('尚未設定報廢試算表網址');
+    if (navigator.onLine === false) throw netError('目前沒有網路');
     const token = await SMES_AUTH.getFreshAccessToken();
     let res, text;
+    const ctrl = timeoutMs ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
     try {
       // 不設 Content-Type → text/plain，避免 CORS 預檢
-      res = await fetch(C.SCRAP_GAS_URL, { method: 'POST', body: JSON.stringify({ action, token, ...payload }) });
+      res = await fetch(C.SCRAP_GAS_URL, { method: 'POST', body: JSON.stringify({ action, token, ...payload }), signal: ctrl?.signal });
       text = await res.text();
     } catch (e) {
-      throw new Error('連不到報廢試算表（網路中斷，或後端尚未完成第一次授權）');
+      throw netError(e.name === 'AbortError' ? '網路太慢，等不到試算表回應' : '連不到報廢試算表（網路不穩或中斷）');
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     let data;
     try { data = JSON.parse(text); } catch (e) {
@@ -53,6 +64,79 @@
     }
     if (!data.ok) throw new Error(data.error || '報廢試算表回應錯誤');
     return data;
+  }
+
+  // ================= 網路不穩時的手機暫存（IndexedDB）=================
+  // 就算關掉網頁或手機沒電，存進來的項目也還在，下次打開會自動補送
+  const QDB = { name: 'smes-scrap-queue', store: 'q' };
+  function qOpen() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(QDB.name, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(QDB.store, { keyPath: 'qid' });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function qTx(mode, fn) {
+    const db = await qOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(QDB.store, mode);
+      const out = fn(tx.objectStore(QDB.store));
+      tx.oncomplete = () => { db.close(); resolve(out && 'result' in out ? out.result : undefined); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    });
+  }
+  const qAll = () => qTx('readonly', (s) => s.getAll());
+  const qPut = (rec) => qTx('readwrite', (s) => s.put(rec));
+  const qDel = (qid) => qTx('readwrite', (s) => s.delete(qid));
+
+  async function reloadPending() {
+    try {
+      const rows = (await qAll()) || [];
+      state.pending = rows.sort((a, b) => a.qid - b.qid);
+    } catch (e) {
+      console.warn('[scrap] 讀取暫存失敗', e);
+      state.pending = [];
+    }
+  }
+
+  function pendingAsItem(q) {
+    const it = q.payload.item || {};
+    return {
+      ...it, id: 'q:' + q.qid, batch: q.payload.batch, parts: q.payload.part, method: q.payload.method,
+      score: q.payload.score, addedAt: q.createdAt, pending: true, note: '',
+    };
+  }
+
+  async function flushQueue(manual) {
+    if (state.flushing || !state.pending.length) return;
+    if (navigator.onLine === false) { if (manual) toast('目前沒有網路，連上後會自動補送'); return; }
+    state.flushing = true;
+    let sent = 0, stopMsg = '';
+    try {
+      for (const q of [...state.pending]) {
+        try {
+          const data = await gas('add', q.payload, ADD_TIMEOUT_MS);
+          await qDel(q.qid);
+          state.pending = state.pending.filter((p) => p.qid !== q.qid);
+          if (q.payload.batch === currentBatch()) {
+            const idx = state.items.findIndex((i) => i.id === data.item.id);
+            if (idx >= 0) state.items[idx] = data.item; else state.items.push(data.item);
+          }
+          sent++;
+        } catch (e) {
+          stopMsg = e.message;
+          if (e.network) break;           // 還是沒網路 → 下次再試
+          q.error = e.message;            // 其他錯誤（例如登入過期）→ 留在手機、標示原因，繼續送下一筆
+          await qPut(q).catch(() => {});
+        }
+      }
+    } finally {
+      state.flushing = false;
+      renderList(); rerenderCandidates(); setStatus();
+    }
+    if (sent) toast(`📤 已補送 ${sent} 筆到試算表${state.pending.length ? `，還有 ${state.pending.length} 筆等待中` : ''}`);
+    else if (manual && stopMsg) toast('補送失敗：' + stopMsg);
   }
 
   // ================= 比對引擎 =================
@@ -172,8 +256,22 @@
 
   // ================= 報廢清單 =================
   function currentBatch() { return $('batchInput').value.trim(); }
-  function listPNSet() { return new Set(state.items.map((i) => i.propertyNumber)); }
-  function listItemByPN(pn) { return state.items.find((i) => i.propertyNumber === pn); }
+  // 目前批次的清單 = 試算表裡的 + 還在手機等待補送的
+  function allItems() {
+    const batch = currentBatch();
+    const pend = state.pending.filter((q) => q.payload.batch === batch).map(pendingAsItem);
+    const merged = state.items.map((i) => ({ ...i }));
+    pend.forEach((p) => {
+      const ex = merged.find((i) => i.propertyNumber === p.propertyNumber);
+      const union = (a, b) => [...new Set(`${a || ''}、${b || ''}`.split('、').filter(Boolean))].join('、');
+      if (!ex) merged.push(p);
+      else if (ex.pending) ex.parts = union(ex.parts, p.parts);
+      else ex._pendingParts = union(ex._pendingParts, p.parts);
+    });
+    return merged;
+  }
+  function listPNSet() { return new Set(allItems().map((i) => i.propertyNumber)); }
+  function listItemByPN(pn) { return allItems().find((i) => i.propertyNumber === pn); }
 
   async function loadList() {
     const batch = currentBatch();
@@ -186,6 +284,7 @@
       renderBatchOptions();
       setSheetLinks();
       setStatus('ok');
+      setTimeout(() => flushQueue(), 300);
     } catch (e) {
       state.items = [];
       setStatus('gasError', e.message);
@@ -208,7 +307,14 @@
   }
 
   function renderList() {
-    const items = [...state.items].sort((a, b) => String(b.addedAt).localeCompare(String(a.addedAt)));
+    const items = allItems().sort((a, b) => (b.pending === true) - (a.pending === true) || String(b.addedAt).localeCompare(String(a.addedAt)));
+    const nPend = state.pending.length;
+    $('pendingBar').innerHTML = nPend
+      ? `<span>⏳ 有 <b>${nPend}</b> 筆先存在這支手機，連上網路會自動補送</span>
+         <button type="button" class="btn btn-ghost" id="btnFlush">${state.flushing ? '補送中…' : '立即重送'}</button>`
+      : '';
+    $('pendingBar').hidden = !nPend;
+    if (nPend) $('btnFlush').onclick = () => flushQueue(true);
     $('listCount').textContent = items.length;
     $('topCount').textContent = items.length;
     const total = items.reduce((s, i) => s + (Number(i.price) || 0), 0);
@@ -222,9 +328,9 @@
       return;
     }
     $('listItems').innerHTML = items.map((i) => `
-      <div class="li-row">
+      <div class="li-row ${i.pending ? 'pending' : ''}">
         <div class="li-main">
-          <div class="li-pn">${esc(i.propertyNumber)}<span class="li-age">${i.acquiredDate ? esc(i.acquiredDate) : ''}${i.age ? ` · ${esc(i.age)} 年` : ''}</span></div>
+          <div class="li-pn">${esc(i.propertyNumber)}${i.pending ? '<span class="li-wait">⏳ 待補送</span>' : ''}${i._pendingParts ? `<span class="li-wait">⏳ 補記${esc(i._pendingParts)}</span>` : ''}<span class="li-age">${i.acquiredDate ? esc(i.acquiredDate) : ''}${i.age ? ` · ${esc(i.age)} 年` : ''}</span></div>
           <div class="li-model">${esc(i.model || i.itemName)}</div>
           <div class="li-meta">📍${esc(i.location || '-')}${i.parts ? ` · ${String(i.parts).split('、').map((p) => `<span class="li-part">${esc(p)}</span>`).join('')}` : ''}
             ${/推定|手動/.test(i.method) ? `<span class="li-method warn">${esc(i.method)}</span>` : ''}</div>
@@ -233,10 +339,21 @@
       </div>`).join('');
   }
 
-  async function removeItem(id) {
+  async function removeItem(id, skipConfirm) {
+    if (String(id).startsWith('q:')) {
+      const qid = Number(String(id).slice(2));
+      const q = state.pending.find((p) => p.qid === qid);
+      if (!q) return;
+      if (!skipConfirm && !confirm(`${q.payload.item.propertyNumber} 還沒送到試算表，要直接取消嗎？`)) return;
+      await qDel(qid).catch(() => {});
+      state.pending = state.pending.filter((p) => p.qid !== qid);
+      renderList(); rerenderCandidates(); setStatus();
+      toast(`已取消 ${q.payload.item.propertyNumber}`);
+      return;
+    }
     const it = state.items.find((i) => i.id === id);
     if (!it) return;
-    if (!confirm(`要把 ${it.propertyNumber}（${it.model}）移出報廢清單嗎？\n試算表會保留紀錄並標成「已移除」。`)) return;
+    if (!skipConfirm && !confirm(`要把 ${it.propertyNumber}（${it.model}）移出報廢清單嗎？\n試算表會保留紀錄並標成「已移除」。`)) return;
     try {
       await gas('remove', { id });
       state.items = state.items.filter((i) => i.id !== id);
@@ -279,41 +396,78 @@
 
   function shotPart() {
     const s = state.shot;
+    if (s?.source === 'qr') return '財產標籤';
     const t = s?.ai?.photo_type;
     if (state.part !== '財產標籤' && ['主機', '螢幕', '筆電'].includes(t)) return t;
     return state.part;
   }
 
-  async function addToList(rec, method, score, btn) {
+  // 回傳 { ok, queued, merged, itemId }
+  async function addToList(rec, method, score, btn, opts = {}) {
     const batch = currentBatch();
-    if (!batch) { toast('請先在上方輸入「報廢批次」名稱'); $('batchInput').focus(); return; }
+    if (!batch) { toast('請先在上方輸入「報廢批次」名稱'); $('batchInput').focus(); return { ok: false }; }
     if (btn) { btn.disabled = true; btn.textContent = '寫入中…'; }
     const s = state.shot;
     const ai = s?.ai;
+    const photo = s && !s.photoSent && s.thumbP ? await s.thumbP.catch(() => '') : '';
+    const payload = {
+      batch,
+      item: mapRec(rec),
+      part: shotPart(),
+      method,
+      score,
+      aiSummary: s?.source === 'qr'
+        ? `條碼：${ai?.property_number || ''}`
+        : ai ? [ai.photo_type, ai.brand, ai.model, ai.property_number && `編號 ${ai.property_number}`, ai.serial_number && `S/N ${ai.serial_number}`].filter(Boolean).join(' ') : '',
+      photo,
+    };
+    const prefix = opts.auto ? '🎯 自動加入' : '✅ 已加入';
+    const undo = (id) => ({ label: '復原', fn: () => removeItem(id, true) });
     try {
-      const photo = s && !s.photoSent ? await s.thumbP.catch(() => '') : '';
-      const data = await gas('add', {
-        batch,
-        item: mapRec(rec),
-        part: shotPart(),
-        method,
-        score,
-        aiSummary: ai ? [ai.photo_type, ai.brand, ai.model, ai.property_number && `編號 ${ai.property_number}`, ai.serial_number && `S/N ${ai.serial_number}`].filter(Boolean).join(' ') : '',
-        photo,
-      });
+      const data = await gas('add', payload, ADD_TIMEOUT_MS);
       if (s && photo) s.photoSent = true;
       const idx = state.items.findIndex((i) => i.id === data.item.id);
       if (idx >= 0) state.items[idx] = data.item; else state.items.push(data.item);
       renderList(); rerenderCandidates();
-      if (navigator.vibrate) navigator.vibrate(40);
-      toast(data.merged
-        ? `${rec.property_number} 已在清單，補記「${shotPart()}」`
-        : `✅ 已加入 ${rec.property_number}（清單共 ${state.items.length} 台）`);
-      setTimeout(() => $('captureCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 700);
+      if (navigator.vibrate) navigator.vibrate(opts.auto ? [40, 40, 40] : 40);
+      if (data.merged) toast(`${rec.property_number} 已在清單，補記「${payload.part}」`);
+      else toast(`${prefix} ${rec.property_number}（清單共 ${allItems().length} 台）`, undo(data.item.id));
+      if (!opts.stay) setTimeout(() => $('captureCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 700);
+      flushQueue();
+      return { ok: true, merged: data.merged, itemId: data.item.id };
     } catch (e) {
-      toast('寫入失敗：' + e.message);
-      if (btn) { btn.disabled = false; btn.textContent = '＋ 加入報廢清單'; }
+      if (!e.network) {
+        toast('寫入失敗：' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = '＋ 加入報廢清單'; }
+        return { ok: false };
+      }
+      // 📶 網路不穩：先存在手機，連上後自動補送
+      const q = { qid: Date.now() + Math.random(), createdAt: new Date().toISOString(), payload };
+      try {
+        await qPut(q);
+      } catch (err) {
+        toast('網路不穩，而且手機暫存也失敗：' + err.message);
+        if (btn) { btn.disabled = false; btn.textContent = '＋ 加入報廢清單'; }
+        return { ok: false };
+      }
+      if (s && photo) s.photoSent = true;
+      state.pending.push(q);
+      renderList(); rerenderCandidates(); setStatus();
+      if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+      toast(`📶 網路不穩，${rec.property_number} 先存在手機，連上後自動補送`, undo('q:' + q.qid));
+      if (!opts.stay) setTimeout(() => $('captureCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 700);
+      return { ok: true, queued: true };
     }
+  }
+
+  // 🎯 標籤／序號 100% 相符、只有一筆、還沒在清單 → 自動加入（可在畫面上關掉）
+  function autoAddCandidate(cands) {
+    if (!$('autoAddToggle').checked) return null;
+    const top = cands[0];
+    if (!top || top.score < 100) return null;
+    if (cands.filter((c) => c.score >= 100).length !== 1) return null;
+    if (listPNSet().has(top.rec.property_number)) return null;
+    return top;
   }
 
   // ================= 拍照與辨識 =================
@@ -329,11 +483,12 @@
 
   async function handleFile(file) {
     if (!file) return;
-    const shot = { id: Date.now(), file, ai: null, photoSent: false, thumbP: makeThumb(file) };
+    const shot = { id: Date.now(), source: 'photo', file, ai: null, photoSent: false, thumbP: makeThumb(file) };
     shot.thumbP.catch(() => {});
     state.shot = shot;
     state.showAll = false;
     $('resultCard').style.display = '';
+    $('shotPreview').hidden = false;
     $('shotPreview').src = URL.createObjectURL(file);
     $('shotStatus').innerHTML = '<span class="spin"></span> AI 辨識中…';
     $('aiChips').innerHTML = '';
@@ -346,25 +501,137 @@
       const { parsed } = await SMES_GEMINI.recognize(file, hint);
       if (state.shot !== shot) return;
       shot.ai = parsed || {};
-      renderAiChips(shot.ai);
-      const cands = findCandidates(shot.ai);
-      state.lastCandidates = cands;
-      renderShotCandidates();
-      const peers = sameModelPeers(cands);
-      gas('log', {
-        part: shotPart(), ai: shot.ai,
-        best: cands[0] ? { propertyNumber: cands[0].rec.property_number, model: cands[0].rec.model, score: cands[0].score } : {},
-        candidateCount: cands.length, sameModelCount: peers.length,
-      }).catch((e) => console.warn('[scrap] log 失敗', e));
+      await processShot(shot);
     } catch (e) {
       if (state.shot !== shot) return;
-      $('shotStatus').innerHTML = `<span class="err">⚠️ ${esc(e.message)}</span>`;
-      $('candList').innerHTML = `<div class="cand-empty">可以重拍一次，或在下方「直接搜尋財產清冊」手動找。
+      const offline = navigator.onLine === false || /fetch|network|連線|網路/i.test(e.message);
+      $('shotStatus').innerHTML = `<span class="err">⚠️ ${esc(offline ? '網路不穩，AI 辨識送不出去' : e.message)}</span>`;
+      $('candList').innerHTML = `<div class="cand-empty">${offline
+        ? '沒網路時可以改用 <b>📱 掃條碼</b> 或下方「直接搜尋財產清冊」，加入的項目會先存在手機。'
+        : '可以重拍一次，或在下方「直接搜尋財產清冊」手動找。'}
         <button type="button" class="btn btn-ghost" data-retry="1">🔁 用這張再辨識一次</button></div>`;
     }
   }
 
+  // 辨識（或掃碼）完成後：列出候選 → 寫辨識紀錄 → 100% 相符就自動加入
+  async function processShot(shot) {
+    renderAiChips(shot.ai);
+    const cands = findCandidates(shot.ai);
+    state.lastCandidates = cands;
+    renderShotCandidates();
+    const peers = sameModelPeers(cands);
+    gas('log', {
+      part: shotPart(), ai: { ...shot.ai, photo_type: shot.source === 'qr' ? '條碼' : shot.ai.photo_type },
+      best: cands[0] ? { propertyNumber: cands[0].rec.property_number, model: cands[0].rec.model, score: cands[0].score } : {},
+      candidateCount: cands.length, sameModelCount: peers.length,
+    }).catch((e) => console.warn('[scrap] log 失敗', e));
+    const auto = autoAddCandidate(cands);
+    if (!auto) return { auto: false, cands };
+    $('shotStatus').innerHTML = '<span class="spin"></span> 編號完全相符，自動加入中…';
+    const r = await addToList(auto.rec, auto.method, 100, null, { auto: true, stay: shot.source === 'qr' });
+    if (state.shot === shot) {
+      $('shotStatus').innerHTML = r.ok
+        ? `🎯 ${esc(auto.rec.property_number)} 已自動加入${r.queued ? '（先存在手機）' : ''}`
+        : '🎯 找到了！財產編號完全相符';
+    }
+    return { auto: r.ok, cands, rec: auto.rec, queued: r.queued };
+  }
+
+  // ================= 掃二維條碼 =================
+  let qrScanner = null;
+  let qrBusy = false;
+  let qrLast = { text: '', at: 0 };
+
+  function loadQrLib() {
+    if (window.Html5Qrcode) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('條碼元件載入失敗（需要網路，或先在有網路時開一次）'));
+      document.head.appendChild(s);
+    });
+  }
+
+  function qrMsg(html, kind) {
+    const el = $('qrMsg');
+    el.innerHTML = html;
+    el.className = 'qr-msg' + (kind ? ' ' + kind : '');
+  }
+
+  async function openQR() {
+    if (!currentBatch()) { toast('請先在上方輸入「報廢批次」名稱'); $('batchInput').focus(); return; }
+    $('qrModal').hidden = false;
+    document.body.style.overflow = 'hidden';
+    qrMsg('把財產標籤上的二維條碼放進框內，掃到會自動找財產');
+    try {
+      await loadQrLib();
+      qrScanner = new window.Html5Qrcode('qrReader', { verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+      await qrScanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } },
+        onQrDecoded,
+        () => {}
+      );
+    } catch (e) {
+      qrMsg('⚠️ 相機開啟失敗：' + esc(e.message || e) + '<br>請確認已允許瀏覽器使用相機', 'err');
+    }
+  }
+
+  async function closeQR() {
+    if (qrScanner) {
+      try { await qrScanner.stop(); } catch (e) { /* 已停止 */ }
+      try { qrScanner.clear(); } catch (e) { /* ignore */ }
+      qrScanner = null;
+    }
+    $('qrModal').hidden = true;
+    document.body.style.overflow = '';
+  }
+
+  async function onQrDecoded(text) {
+    const now = Date.now();
+    if (qrBusy || (text === qrLast.text && now - qrLast.at < 4000)) return;
+    qrBusy = true;
+    qrLast = { text, at: now };
+    try { qrScanner.pause(true); } catch (e) { /* ignore */ }
+    if (navigator.vibrate) navigator.vibrate(30);
+    qrMsg(`<span class="spin"></span> 掃到「${esc(String(text).slice(0, 40))}」，比對中…`);
+
+    const shot = { id: now, source: 'qr', file: null, ai: { photo_type: '財產標籤', property_number: String(text).trim() }, photoSent: true, thumbP: null };
+    state.shot = shot;
+    state.showAll = false;
+    $('resultCard').style.display = '';
+    $('shotPreview').hidden = true;
+    $('groupNotice').innerHTML = '';
+    const r = await processShot(shot);
+    qrBusy = false;
+
+    if (r.auto) {
+      // 連續掃描：加入成功就留在掃描畫面，直接掃下一台
+      qrMsg(`✅ <b>${esc(r.rec.property_number)}</b> ${esc(r.rec.model || '')} 已加入${r.queued ? '（先存在手機）' : ''}<br>清單共 ${allItems().length} 台，請掃下一台`, 'ok');
+      setTimeout(() => { try { qrScanner && qrScanner.resume(); } catch (e) { /* ignore */ } }, 900);
+      return;
+    }
+    const top = r.cands[0];
+    if (top && top.score >= 100 && listPNSet().has(top.rec.property_number)) {
+      qrMsg(`ℹ️ <b>${esc(top.rec.property_number)}</b> 已經在清單裡了，請掃下一台`, 'warn');
+      setTimeout(() => { try { qrScanner && qrScanner.resume(); } catch (e) { /* ignore */ } }, 1200);
+      return;
+    }
+    // 沒有 100% 相符（或關掉自動加入）→ 關掉掃描，讓老師看候選清單自己選
+    await closeQR();
+    if (!top) {
+      $('shotStatus').innerHTML = '🤔 條碼內容在清冊裡找不到';
+      $('candList').innerHTML = `<div class="cand-empty">條碼內容：<code>${esc(text)}</code><br>可以改拍照辨識，或用下方搜尋手動找。</div>`;
+    }
+    $('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function renderAiChips(ai) {
+    if (state.shot?.source === 'qr') {
+      $('aiChips').innerHTML = `<span class="ai-chip"><small>條碼內容</small>${esc(String(ai.property_number || '').slice(0, 60))}</span>`;
+      return;
+    }
     const chips = [
       ai.photo_type && ['類型', ai.photo_type],
       ai.brand && ['廠牌', ai.brand],
@@ -473,12 +740,15 @@
   }
 
   function sortedForPrint() {
-    return [...state.items].sort((a, b) => String(a.propertyNumber).localeCompare(String(b.propertyNumber)));
+    return allItems().sort((a, b) => String(a.propertyNumber).localeCompare(String(b.propertyNumber)));
   }
 
   function printList() {
     const items = sortedForPrint();
     if (!items.length) { toast('清單是空的，先加入要報廢的設備'); return; }
+    const nPend = items.filter((i) => i.pending).length;
+    if (nPend && !confirm(`還有 ${nPend} 筆存在手機、尚未送到試算表。
+要先一起印出來嗎？（建議連上網路補送完再印）`)) return;
     const total = items.reduce((s, i) => s + (Number(i.price) || 0), 0);
     $('printArea').innerHTML = `
       <h1>桃園市龍潭區石門國民小學　電腦設備報廢清冊</h1>
@@ -606,7 +876,7 @@
         return;
       }
       if (e.target.closest('[data-more]')) { state.showAll = true; renderShotCandidates(); return; }
-      if (e.target.closest('[data-retry]')) { if (state.shot) handleFile(state.shot.file); return; }
+      if (e.target.closest('[data-retry]')) { if (state.shot?.file) handleFile(state.shot.file); return; }
       const del = e.target.closest('[data-del]');
       if (del) { removeItem(del.dataset.del); return; }
     });
@@ -616,6 +886,24 @@
     $('btnPrint').addEventListener('click', printList);
     $('btnExport').addEventListener('click', exportExcel);
     $('btnRefresh').addEventListener('click', () => { loadList(); toast('已重新整理'); });
+
+    // 自動加入開關（預設開啟，記在這支手機）
+    $('autoAddToggle').checked = localStorage.getItem(LS_AUTO) !== '0';
+    $('autoAddToggle').addEventListener('change', (e) => {
+      localStorage.setItem(LS_AUTO, e.target.checked ? '1' : '0');
+      toast(e.target.checked ? '已開啟：編號 100% 相符就自動加入' : '已關閉自動加入，每台都要自己按「加入」');
+    });
+
+    // 掃二維條碼
+    $('btnQR').addEventListener('click', openQR);
+    $('btnQrClose').addEventListener('click', closeQR);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('qrModal').hidden) closeQR(); });
+
+    // 網路恢復就補送；另外每 20 秒檢查一次
+    window.addEventListener('online', () => { toast('📶 網路恢復，開始補送…'); flushQueue(); });
+    window.addEventListener('offline', () => toast('📵 網路中斷了，加入的項目會先存在手機'));
+    setInterval(() => { if (state.pending.length) flushQueue(); }, 20000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && state.pending.length) flushQueue(); });
   }
 
   function init() {
@@ -623,10 +911,10 @@
     bind();
     setStatus();
     loadInventory().then(() => renderSearch());
-    loadList();
+    reloadPending().then(() => { renderList(); loadList(); });
   }
 
   // 給測試用（不影響正式功能）
-  window.SMES_SCRAP = { scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state };
+  window.SMES_SCRAP = { scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
   init();
 })();

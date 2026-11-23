@@ -64,8 +64,8 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <title>電腦報廢點收｜石門國小</title>
-<link rel="stylesheet" href="css/style.css?v=7.5.0">
-<link rel="stylesheet" href="css/scrap.css?v=7.5.0">
+<link rel="stylesheet" href="css/style.css?v=7.5.1">
+<link rel="stylesheet" href="css/scrap.css?v=7.5.1">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="scrap-page">
@@ -103,7 +103,7 @@
     <div class="login-footer__bottom">
       <p class="site-credit">Made with <span class="site-credit__heart" aria-label="愛心">❤️</span> by
       <a href="https://cagoooo.github.io/Akai/" target="_blank" rel="noopener noreferrer" title="阿凱老師教育科技創新專區" class="site-credit__author">阿凱老師</a><span class="footer-school"><span class="footer-dot" aria-hidden="true">・</span>桃園市龍潭區石門國民小學</span></p>
-      <span class="footer-version">v7.5.0</span>
+      <span class="footer-version">v7.5.1</span>
     </div>
   </footer>
 </div>
@@ -155,12 +155,17 @@
             <span class="ico">📷</span><span>拍照辨識</span>
             <input id="shotCamera" type="file" accept="image/*" capture="environment">
           </label>
+          <button type="button" class="btn-scrap-sub qr" id="btnQR">📱 掃條碼<small>連續掃描</small></button>
           <button type="button" class="btn-scrap-sub" id="btnLive">🎥 Live 相機</button>
           <label class="btn-scrap-sub" for="shotLibrary">🖼️ 相簿
             <input id="shotLibrary" type="file" accept="image/*">
           </label>
         </div>
-        <p class="capture-tip">💡 有財產標籤就拍標籤，編號一對就是 100%；沒有標籤再拍銘牌（型號貼紙）。</p>
+        <label class="auto-toggle">
+          <span class="switch"><input type="checkbox" id="autoAddToggle" checked><span class="slider"></span></span>
+          <span><b>🎯 編號 100% 相符就自動加入</b><small>掃條碼或拍到標籤、清冊只對到一筆時，不用再按「加入」（加入後可按「復原」）</small></span>
+        </label>
+        <p class="capture-tip">💡 標籤有二維條碼就用「📱 掃條碼」，一秒一台、不用等 AI；沒有條碼拍標籤；標籤掉了再拍銘牌（型號貼紙）。</p>
       </div>
 
       <!-- 辨識結果 -->
@@ -197,6 +202,7 @@
           <div class="list-count"><b id="listCount">0</b><span>台</span></div>
         </div>
         <div class="list-sum" id="listSum"></div>
+        <div class="pending-bar" id="pendingBar" hidden></div>
         <div class="list-tools">
           <button type="button" class="btn btn-primary" id="btnPrint">🖨️ 列印報廢清冊</button>
           <button type="button" class="btn btn-ghost" id="btnExport">⬇️ Excel</button>
@@ -229,10 +235,23 @@
     <div class="scrap-footer__bottom">
       <p class="site-credit">Made with <span class="site-credit__heart" aria-label="愛心">❤️</span> by
         <a href="https://cagoooo.github.io/Akai/" target="_blank" rel="noopener noreferrer" title="阿凱老師教育科技創新專區" class="site-credit__author">阿凱老師</a><span class="footer-school"><span class="footer-dot" aria-hidden="true">・</span>桃園市龍潭區石門國民小學</span></p>
-      <span class="footer-version">v7.5.0</span>
+      <span class="footer-version">v7.5.1</span>
     </div>
   </footer>
 </main>
+
+<!-- 掃二維條碼 -->
+<div class="qr-modal no-print" id="qrModal" hidden>
+  <div class="qr-box" role="dialog" aria-modal="true" aria-labelledby="qrTitle">
+    <div class="qr-head">
+      <h3 id="qrTitle">📱 掃財產標籤條碼</h3>
+      <button type="button" class="qr-close" id="btnQrClose" aria-label="關閉">✕</button>
+    </div>
+    <div id="qrReader" class="qr-reader"></div>
+    <div class="qr-msg" id="qrMsg"></div>
+    <p class="qr-tip">掃到且清冊只對到一筆就自動加入，畫面不關、直接掃下一台。<br>對不到的會關掉掃描，讓您從候選清單自己選。</p>
+  </div>
+</div>
 
 <!-- 列印區（只在列印時顯示） -->
 <div id="printArea" class="print-area"></div>
@@ -241,13 +260,13 @@
 
 </div><!-- /appShell -->
 
-<script src="config.js?v=7.5.0"></script>
-<script src="js/auth.js?v=7.5.0"></script>
-<script src="js/supabase-client.js?v=7.5.0"></script>
-<script src="js/camera.js?v=7.5.0"></script>
-<script src="js/gemini.js?v=7.5.0"></script>
-<script src="js/error-monitor.js?v=7.5.0"></script>
-<script src="js/version-check.js?v=7.5.0"></script>
+<script src="config.js?v=7.5.1"></script>
+<script src="js/auth.js?v=7.5.1"></script>
+<script src="js/supabase-client.js?v=7.5.1"></script>
+<script src="js/camera.js?v=7.5.1"></script>
+<script src="js/gemini.js?v=7.5.1"></script>
+<script src="js/error-monitor.js?v=7.5.1"></script>
+<script src="js/version-check.js?v=7.5.1"></script>
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(e => console.warn('[SW] register fail', e));
@@ -258,7 +277,7 @@
   SMES_AUTH.onReady(user => {
     if (user) {
       const s = document.createElement('script');
-      s.src = 'js/scrap.js?v=7.5.0';
+      s.src = 'js/scrap.js?v=7.5.1';
       document.body.appendChild(s);
     }
   });
