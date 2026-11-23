@@ -50,26 +50,46 @@
     }
   }
 
-  // 🔐 允許名單：真正的把關在資料庫（RLS），這裡只負責給名單外的人清楚的說明
-  // 回傳 true / false；查不到（例如斷網）回傳 null，不把人踢出去
-  async function checkAllowed() {
+  // 🔐 允許名單：真正的把關在資料庫（RLS），這裡只負責給名單外的人清楚的說明。
+  // 在背景檢查、不擋畫面；也不在 onAuthStateChange 回呼裡等待 Supabase 呼叫（會互鎖卡住）。
+  // 直接用 fetch 帶登入憑證去問，8 秒沒回應就放棄（查不到不會把人踢出去）。
+  async function fetchAllowed(accessToken) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
     try {
-      const { data, error } = await sb.rpc('is_allowed_user');
-      if (error) { console.warn('[auth] allowlist check error:', error); return null; }
-      return data === true;
+      const res = await fetch(`${C.SUPABASE_URL}/rest/v1/rpc/is_allowed_user`, {
+        method: 'POST',
+        headers: { apikey: C.SUPABASE_ANON_KEY, Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: '{}',
+        signal: ctrl.signal
+      });
+      if (!res.ok) return null;            // 憑證過期等情況：交給原本的登入過期流程
+      return (await res.json()) === true;  // 明確的 true / false
     } catch (e) {
-      console.warn('[auth] allowlist check failed:', e);
-      return null;
+      return null;                         // 斷網或逾時
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  async function rejectNotAllowed(email) {
-    alert(`這個帳號還沒有開通使用權限。
+  let verifiedEmail = null;
+  let verifyingEmail = null;
+  function verifyAllowlistInBackground(user, accessToken) {
+    if (!user || !accessToken || verifyingEmail === user.email || verifiedEmail === user.email) return;
+    verifyingEmail = user.email;
+    fetchAllowed(accessToken).then(async (ok) => {
+      if (verifyingEmail === user.email) verifyingEmail = null;
+      if (ok === true) { verifiedEmail = user.email; return; }
+      if (ok !== false) return;
+      localStorage.removeItem('smes_gemini_api_key');
+      alert(`這個帳號還沒有開通使用權限。
 
-帳號：${email}
+帳號：${user.email || ''}
 
 本系統只開放給名單上的教職員，請聯絡資訊組開通。`);
-    await sb.auth.signOut();
+      try { await sb.auth.signOut(); } catch (e) {}
+      location.reload();
+    });
   }
 
   async function initSession() {
@@ -87,12 +107,8 @@
       }
     }
 
-    // 允許名單檢查（名單外：說明後登出）
-    if (currentUser && (await checkAllowed()) === false) {
-      localStorage.removeItem('smes_gemini_api_key');
-      await rejectNotAllowed(currentUser.email || '');
-      currentUser = null;
-    }
+    // 允許名單檢查（背景執行；名單外：說明後登出）
+    if (currentUser) verifyAllowlistInBackground(currentUser, session.access_token);
 
     // 登入成功 → 載入 Gemini API Key 到 localStorage
     if (currentUser) loadAppSecrets();
@@ -110,10 +126,9 @@
         await sb.auth.signOut();
         return;
       }
-      if (newUser && event === 'SIGNED_IN' && (await checkAllowed()) === false) {
-        localStorage.removeItem('smes_gemini_api_key');
-        await rejectNotAllowed(newUser.email || '');
-        return;
+      if (newUser && event === 'SIGNED_IN') {
+        const tk = session.access_token;
+        setTimeout(() => verifyAllowlistInBackground(newUser, tk), 0);
       }
       currentUser = newUser;
       updateAuthUI();
