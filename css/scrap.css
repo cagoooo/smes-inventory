@@ -101,6 +101,29 @@
   background: #f59e0b; color: #fff; font-size: 11.5px; font-weight: 800; font-family: system-ui, sans-serif;
 }
 
+/* ---------- 各教室點收進度 ---------- */
+.progress-box { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: #f8fafc; border: 1px solid var(--border); }
+.progress-box[hidden] { display: none; }
+.pg-title { font-size: 14px; font-weight: 800; margin-bottom: 4px; }
+.pg-title small { font-weight: 500; color: var(--text-soft); }
+.pg-row { border-top: 1px solid var(--border); }
+.pg-row:first-of-type { border-top: none; }
+.pg-row summary {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center;
+  padding: 8px 0; cursor: pointer; list-style: none;
+}
+.pg-row summary::-webkit-details-marker { display: none; }
+.pg-name { font-size: 13.5px; overflow-wrap: anywhere; }
+.pg-num { font-size: 14px; font-weight: 900; color: var(--scrap-dark); }
+.pg-row.full .pg-num { color: #15803d; }
+.pg-bar { grid-column: 1 / -1; height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+.pg-bar i { display: block; height: 100%; background: linear-gradient(90deg, #f97316, var(--scrap)); }
+.pg-row.full .pg-bar i { background: #16a34a; }
+.pg-missing { font-size: 13px; color: var(--text-soft); line-height: 1.9; padding: 0 0 10px; }
+.pg-missing code { padding: 1px 6px; border-radius: 6px; background: #fff; border: 1px solid var(--border); color: var(--text); font-size: 12.5px; }
+.print-opt { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--text-soft); margin: -4px 0 8px; cursor: pointer; line-height: 1.5; }
+.print-opt input { margin-top: 3px; }
+
 /* ---------- 掃條碼 ---------- */
 .qr-modal {
   position: fixed; inset: 0; z-index: 9000; background: rgba(15, 23, 42, 0.78);
@@ -317,4 +340,6 @@
   .print-area tfoot td { font-weight: 700; }
   .pa-sign { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12pt; margin-top: 22pt; font-size: 11pt; }
   .pa-sign div { border-top: 1px solid #000; padding-top: 4pt; text-align: center; margin-top: 28pt; }
+  .pa-appendix { break-before: page; }
+  .pa-appendix h2 { font-size: 13pt; margin: 0 0 6pt; }
 }

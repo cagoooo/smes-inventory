@@ -323,6 +323,7 @@
     $('listSum').innerHTML = items.length
       ? `原始單價合計 <b>${money(total)}</b> · 已點到主機 ${host} · 螢幕 ${mon}`
       : '';
+    renderProgress(items);
     if (!items.length) {
       $('listItems').innerHTML = '<div class="list-empty">尚未加入任何設備<br><small>拍照後按「加入報廢清單」就會出現在這裡</small></div>';
       return;
@@ -337,6 +338,46 @@
         </div>
         <button type="button" class="li-del" data-del="${esc(i.id)}" aria-label="移除 ${esc(i.propertyNumber)}">✕</button>
       </div>`).join('');
+  }
+
+  // 📊 各教室／型號點收進度：清單裡每個「地點＋型號」在清冊中共有幾台、點到幾台、還差哪幾台
+  function progressGroups(items) {
+    if (!state.inventory.length) return [];
+    const picked = new Set(items.map((i) => i.propertyNumber));
+    const keys = new Map();
+    items.forEach((i) => {
+      const rec = state.inventory.find((r) => r.property_number === i.propertyNumber);
+      if (!rec) return;
+      const k = rec._loc + '｜' + (rec.model || '');
+      if (!keys.has(k)) keys.set(k, { loc: rec._loc || '未填地點', model: rec.model || rec.item_name || '', recs: [] });
+    });
+    keys.forEach((g, k) => {
+      g.recs = state.inventory.filter((r) => (r._loc + '｜' + (r.model || '')) === k)
+        .sort((a, b) => String(a.property_number).localeCompare(String(b.property_number)));
+      g.done = g.recs.filter((r) => picked.has(r.property_number)).length;
+      g.missing = g.recs.filter((r) => !picked.has(r.property_number));
+    });
+    return [...keys.values()].sort((a, b) => a.loc.localeCompare(b.loc, 'zh-Hant') || a.model.localeCompare(b.model));
+  }
+
+  function renderProgress(items) {
+    const groups = progressGroups(items);
+    const box = $('progressBox');
+    if (!groups.length) { box.innerHTML = ''; box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = `<div class="pg-title">📊 各教室點收進度 <small>（清冊中同地點、同型號的台數）</small></div>` + groups.map((g) => {
+      const pct = Math.round((g.done / g.recs.length) * 100);
+      const full = g.done === g.recs.length;
+      return `<details class="pg-row ${full ? 'full' : ''}">
+        <summary>
+          <span class="pg-name"><b>${esc(g.loc)}</b> ${esc(g.model)}</span>
+          <span class="pg-num">${g.done}／${g.recs.length}${full ? ' ✓' : ''}</span>
+          <span class="pg-bar"><i style="width:${pct}%"></i></span>
+        </summary>
+        <div class="pg-missing">${full ? '這組已全部點到 👍'
+          : `還沒點到 ${g.missing.length} 台：${g.missing.map((r) => `<code>${esc(r.property_number)}</code>`).join(' ')}`}</div>
+      </details>`;
+    }).join('');
   }
 
   async function removeItem(id, skipConfirm) {
@@ -743,6 +784,16 @@
     return allItems().sort((a, b) => String(a.propertyNumber).localeCompare(String(b.propertyNumber)));
   }
 
+  // 列印附錄：同地點、同型號但這次沒點到的財產（供核對用，不是報廢項目）
+  function missingAppendix(items) {
+    const groups = progressGroups(items).filter((g) => g.missing.length);
+    if (!groups.length) return '<div class="pa-appendix"><h2>附錄：未點到名單</h2><p>同地點、同型號的設備已全部點到。</p></div>';
+    return `<div class="pa-appendix"><h2>附錄：同地點同型號尚未點到的財產（供核對，非報廢項目）</h2>
+      <table><thead><tr><th>存放地點</th><th>型號</th><th>點到／清冊台數</th><th>尚未點到的財產編號</th></tr></thead>
+      <tbody>${groups.map((g) => `<tr><td>${esc(g.loc)}</td><td>${esc(g.model)}</td><td class="num">${g.done}／${g.recs.length}</td>
+        <td>${g.missing.map((r) => esc(r.property_number)).join('、')}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+
   function printList() {
     const items = sortedForPrint();
     if (!items.length) { toast('清單是空的，先加入要報廢的設備'); return; }
@@ -764,7 +815,8 @@
         </tbody>
         <tfoot><tr><td colspan="6">合計 ${items.length} 筆</td><td class="num">${money(total)}</td><td colspan="4"></td></tr></tfoot>
       </table>
-      <div class="pa-sign"><div>填表人（資訊組）</div><div>單位主管</div><div>總務主任</div><div>校長</div></div>`;
+      <div class="pa-sign"><div>填表人（資訊組）</div><div>單位主管</div><div>總務主任</div><div>校長</div></div>
+      ${$('printMissing').checked ? missingAppendix(items) : ''}`;
     window.print();
   }
 
@@ -910,11 +962,11 @@
     $('batchInput').value = localStorage.getItem(LS_BATCH) || `${SCHOOL_YEAR}學年度 電腦設備報廢`;
     bind();
     setStatus();
-    loadInventory().then(() => renderSearch());
+    loadInventory().then(() => { renderSearch(); renderList(); });
     reloadPending().then(() => { renderList(); loadList(); });
   }
 
   // 給測試用（不影響正式功能）
-  window.SMES_SCRAP = { scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
+  window.SMES_SCRAP = { progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
   init();
 })();
