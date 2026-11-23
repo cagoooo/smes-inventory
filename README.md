@@ -2,7 +2,7 @@
 
 🌐 **線上使用：[教室資訊設備盤點系統](https://cagoooo.github.io/smes-inventory/)**
 
-> 📌 **目前版本：v7.4.14**（依據 `version.json`）
+> 📌 **目前版本：v7.5.5**（依據 `version.json`）
 
 行動化電腦主機盤點：入班拍照 → Gemini AI 自動辨識廠牌/型號/財產編號/取得年份 → 自動比對既有財產清冊，產出電腦汰舊換新決策依據。
 
@@ -17,7 +17,7 @@
 
 ## 技術棧
 - 前端：單檔 HTML + vanilla JS，無框架，GitHub Pages 即可部署
-- 資料庫 + Storage：Supabase (PostgREST + Object Storage，可公開讀寫)
+- 資料庫 + Storage：Supabase（PostgREST + Object Storage；資料列權限 RLS 只認允許名單）
 - AI：Google Gemini 2.5 Flash（視覺辨識）
 - Excel 處理：[SheetJS](https://sheetjs.com/) (CDN 載入)
 
@@ -25,13 +25,19 @@
 ```
 index.html         首頁：教室選擇 + 拍照 + 辨識 + 儲存
 manage.html        管理後台：總覽/拍照紀錄/教室狀態/財產清冊/Excel 匯入
+scrap.html         電腦財產報廢點收：拍照／掃條碼 → 對應財產 → 報廢清單
 config.js          Supabase URL + anon key + Gemini 模型設定
 css/style.css      共用樣式（手機優先、iOS 安全區）
+css/scrap.css      報廢點收頁樣式（含列印版面）
 js/
   supabase-client.js  Supabase REST + Storage 封裝
   gemini.js           Gemini Vision API + 圖片壓縮
   app.js              首頁主邏輯
   manage.js           管理頁主邏輯
+  scrap.js            報廢點收主邏輯（比對引擎、離線暫存、清冊狀態同步）
+  auth.js             Google 登入 + 允許名單檢查
+gas/Code.gs           報廢試算表後端（Google Apps Script，clasp 管理）
+supabase/functions/   Edge Function 原始碼（gemini-proxy）
 data/classrooms.json  教室基礎資料 (JSON 版，備援)
 scripts/
   import_excel.py     Excel→SQL 轉換腳本
@@ -41,7 +47,7 @@ scripts/
 ## 使用流程
 1. 打開 `index.html` → 選樓層、搜尋或點教室卡片
 2. 大大的「📷 拍攝」按鈕 → iPhone 直接開相機
-3. 拍完 → 點「🤖 AI 辨識」（首次使用會請你貼 Gemini API Key）
+3. 拍完 → 點「🤖 AI 辨識」（金鑰登入後自動載入，不用自己貼）
 4. 檢查綠色欄位（AI 自動填），修正後點「✅ 儲存」
 5. 系統會從財產清冊找最接近的紀錄，可一鍵比對
 6. 切到「📊 管理」看總覽、匯出 Excel
@@ -52,18 +58,30 @@ scripts/
 2. 選「主機／螢幕／財產標籤」後拍照 → Gemini 辨識 → 從財產清冊列出最接近的幾筆（附相似度與理由）
    - 財產標籤編號相符＝100%；螢幕會用規格欄裡的螢幕型號對回所屬主機那一筆
    - 同型號同年份有多台時會提醒改拍標籤，或「加入下一台尚未加入的」（註記型號推定）
+   - 標籤有二維條碼可用「📱 掃條碼」連續掃描；編號 100% 相符且只對到一筆會自動加入（可關閉、可復原）
+   - 網路不穩時先存在手機（IndexedDB），連線後自動補送
 3. 按「加入報廢清單」即時寫入 Google 試算表「石門國小 電腦財產報廢點收」（`報廢清單`、`辨識紀錄` 兩分頁，照片存雲端硬碟）
-4. 「列印報廢清冊」輸出 A4 橫式清冊（含合計與核章欄），也可匯出 Excel 交總務處
+4. 清單上方顯示各教室點收進度（同地點同型號點到幾台、還差哪幾台）
+5. 加入清單會同步把財產清冊標成「待報廢」並寫異動紀錄；移出清單自動還原
+6. 「列印報廢清冊」輸出 A4 橫式清冊（含合計與核章欄，可選附未點到名單），也可匯出 Excel 交總務處
 
-後端：`gas/Code.gs`（clasp 管理，學校帳號擁有），每次請求都會向 Supabase 驗證登入 token，只接受學校網域帳號。
+後端：`gas/Code.gs`（clasp 管理，學校帳號擁有），每次請求都會向 Supabase 驗證登入 token，必須是允許名單上的學校帳號。
 
 ## Gemini API Key
-自行於 [Google AI Studio](https://aistudio.google.com/app/apikey) 申請免費 Key，在 index.html 第一次按辨識時會彈出輸入框，Key 只存在本裝置的 localStorage，不會上傳伺服器。
+金鑰存在 Supabase 的 `app_secrets` 資料表，只有允許名單上的帳號登入後讀得到，前端會自動載入到該裝置（`localStorage`）直連 Gemini。
+原始碼與 repo 裡不放金鑰；備援的 Edge Function `gemini-proxy`（`supabase/functions/gemini-proxy/`）同樣要允許名單上的登入帳號才能呼叫。
 
-## 資料安全
-目前採「內部使用」模式（無登入）：任何人有網址都能讀寫。建議：
-- 網址不要公開分享
-- 如需登入，改 manage.html 走 Supabase Auth + Google OAuth（@mail2.smes.tyc.edu.tw 網域限制）
+## 資料安全（2026-11-23 權限加固，v7.5.5 起）
+- **登入**：Supabase Auth + Google 登入，限 `@mail2.smes.tyc.edu.tw` 學校帳號。
+- **允許名單**：學生帳號與教職員同網域，所以另外用資料表 `public.allowed_users` 當名單；資料庫函式 `public.is_allowed_user()` 會檢查登入者的信箱在名單內、且是用 Google 登入。
+- **真正的把關在後端**：盤點系統各資料表與照片儲存空間的權限規則（RLS）、四個統計檢視表（`security_invoker`）、Edge Function、GAS 報廢後端，全部只認這一份名單。前端的檢查只負責顯示「尚未開通」的說明。
+- **未登入**：讀不到任何盤點資料，也無法呼叫 AI 辨識。
+- **開通／移除帳號**：在 Supabase 新增或刪除 `allowed_users` 的一列（email 要小寫）：
+  ```sql
+  insert into public.allowed_users (email, note) values (lower('帳號@mail2.smes.tyc.edu.tw'), '備註');
+  ```
+- **注意**：這個 Supabase 專案與其他工具共用，調整權限時只動盤點系統自己的資料表。
+- 盤點照片（`inventory-photos`）是公開網址，知道網址即可檢視；上傳與刪除需允許名單帳號。
 
 ---
 
