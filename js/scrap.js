@@ -617,15 +617,29 @@
     $('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     const hint = state.part === '財產標籤' ? 'label' : 'device';
+    // 等超過 8 秒就顯示已等幾秒與上限，讓人知道還在等、最多等多久
+    const limitSec = Math.round((SMES_GEMINI.RECOGNIZE_TIMEOUT_MS || 30000) / 1000);
+    const startedAt = Date.now();
+    const waitTimer = setInterval(() => {
+      if (state.shot !== shot) return;
+      const sec = Math.round((Date.now() - startedAt) / 1000);
+      if (sec >= 8) $('shotStatus').innerHTML = `<span class="spin"></span> AI 辨識中…網路有點慢，已等 ${sec} 秒（最多等 ${limitSec} 秒）`;
+    }, 1000);
     try {
-      const { parsed } = await SMES_GEMINI.recognize(file, hint);
+      let parsed;
+      try {
+        ({ parsed } = await SMES_GEMINI.recognize(file, hint));
+      } finally {
+        clearInterval(waitTimer);
+      }
       if (state.shot !== shot) return;
       shot.ai = parsed || {};
       await processShot(shot);
     } catch (e) {
       if (state.shot !== shot) return;
-      const offline = navigator.onLine === false || /fetch|network|連線|網路/i.test(e.message);
-      $('shotStatus').innerHTML = `<span class="err">⚠️ ${esc(offline ? '網路不穩，AI 辨識送不出去' : e.message)}</span>`;
+      const offline = navigator.onLine === false || e.timeout === true || /fetch|network|連線|網路/i.test(e.message);
+      const why = e.timeout ? `等了 ${limitSec} 秒 AI 還沒回應，網路不穩` : (offline ? '網路不穩，AI 辨識送不出去' : e.message);
+      $('shotStatus').innerHTML = `<span class="err">⚠️ ${esc(why)}</span>`;
       $('candList').innerHTML = `<div class="cand-empty">${offline
         ? '沒網路時可以改用 <b>📱 掃條碼</b> 或下方「直接搜尋財產清冊」，加入的項目會先存在手機。'
         : '可以重拍一次，或在下方「直接搜尋財產清冊」手動找。'}

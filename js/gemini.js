@@ -2,6 +2,30 @@
 (function() {
   const KEY_STORAGE = 'smes_gemini_api_key'; // 保留作為離線/備援用
 
+  // ============ 等待上限 ============
+  // 一次辨識（直連＋備援加起來）最多等 30 秒，網路卡住時不會一直轉圈。
+  const RECOGNIZE_TIMEOUT_MS = 30000;
+
+  function timeoutError() {
+    const e = new Error(`⏳ 等了 ${Math.round(RECOGNIZE_TIMEOUT_MS / 1000)} 秒 AI 還沒回應，多半是網路不穩，請再試一次`);
+    e.timeout = true;
+    return e;
+  }
+
+  // 帶期限的 fetch：到期就中斷連線（連同還沒讀完的回應內容一起中斷）
+  function fetchUntil(url, init, deadline) {
+    if (!deadline) return fetch(url, init);
+    const left = deadline - Date.now();
+    if (left <= 0) return Promise.reject(timeoutError());
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), left);
+    return fetch(url, { ...init, signal: ctrl.signal });
+  }
+
+  function isTimeout(err) {
+    return !!err && (err.timeout === true || err.name === 'AbortError');
+  }
+
   // ============ 圖片處理 ============
   function fileToBase64(file) {
     return new Promise((resolve, reject) => {
@@ -29,7 +53,7 @@
 
   // ============ 透過 Edge Function 呼叫 Gemini ============
   // hintType: 'auto' | 'label' | 'device'  → 影響 prompt 分支，優化辨識重點
-  async function recognizeViaProxy(file, hintType = 'auto') {
+  async function recognizeViaProxy(file, hintType = 'auto', deadline = 0) {
     const C = window.SMES_CONFIG;
     const compressed = await compressImage(file);
     const b64 = await fileToBase64(compressed);
@@ -44,7 +68,7 @@
       userToken = window.SMES_AUTH.getAccessToken();
     }
 
-    const doFetch = (token) => fetch(url, {
+    const doFetch = (token) => fetchUntil(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -56,7 +80,7 @@
         mime_type: 'image/jpeg',
         hint_type: hintType
       })
-    });
+    }, deadline);
 
     let res = await doFetch(userToken);
 
@@ -109,7 +133,7 @@
 
   // ============ 直連 Gemini API（主要方式）============
   // Key 存在 localStorage，由 auth.js 登入成功後從 app_secrets 表讀取
-  async function recognizeDirect(file, hintType = 'auto') {
+  async function recognizeDirect(file, hintType = 'auto', deadline = 0) {
     const key = localStorage.getItem(KEY_STORAGE) || window.SMES_CONFIG.GEMINI_API_KEY;
     if (!key) throw new Error('Gemini API Key 尚未載入，請重新整理頁面');
 
@@ -156,7 +180,7 @@
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
     const t0 = performance.now();
-    const res = await fetch(url, {
+    const res = await fetchUntil(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -173,7 +197,7 @@
           thinkingConfig: { thinkingBudget: 0 }
         }
       })
-    });
+    }, deadline);
     if (!res.ok) {
       const t = await res.text().catch(() => '');
       if (res.status === 429) throw new Error('Gemini 配額不足或請求過多，請稍後再試');
@@ -261,12 +285,12 @@
       const { data: { session } } = await window.__SB.auth.getSession();
       if (!session?.access_token) return null;
       const C = window.SMES_CONFIG;
-      const res = await fetch(`${C.SUPABASE_URL}/rest/v1/app_secrets?key=eq.gemini_api_key&select=value`, {
+      const res = await fetchUntil(`${C.SUPABASE_URL}/rest/v1/app_secrets?key=eq.gemini_api_key&select=value`, {
         headers: {
           apikey: C.SUPABASE_ANON_KEY,
           Authorization: `Bearer ${session.access_token}`
         }
-      });
+      }, Date.now() + 8000);
       if (!res.ok) return null;
       const rows = await res.json();
       if (rows?.[0]?.value) {
@@ -285,6 +309,16 @@
 
   // ============ 主入口：優先直連，proxy 僅在「非 Gemini 服務錯誤」時 fallback ============
   async function recognize(file, hintType = 'auto') {
+    const deadline = Date.now() + RECOGNIZE_TIMEOUT_MS;
+    try {
+      return await recognizeWithin(file, hintType, deadline);
+    } catch (e) {
+      // 中斷連線的錯誤訊息是英文（AbortError），統一換成看得懂的說明
+      throw isTimeout(e) ? timeoutError() : e;
+    }
+  }
+
+  async function recognizeWithin(file, hintType, deadline) {
     let hasKey = localStorage.getItem(KEY_STORAGE) || window.SMES_CONFIG.GEMINI_API_KEY;
 
     // 若 localStorage 沒 key，嘗試從 DB 拿（登入者才能讀）
@@ -295,8 +329,10 @@
     // 若有 key → 優先直連（避開 Edge Function verify_jwt 陷阱）
     if (hasKey) {
       try {
-        return await recognizeDirect(file, hintType);
+        return await recognizeDirect(file, hintType, deadline);
       } catch (e) {
+        // ⏳ 已經等到上限 → 不再換備援通道重等一輪
+        if (isTimeout(e)) throw e;
         // 🚦 503/429/quota 是 Gemini 本身的問題，proxy 也是打同一個 Gemini → fallback 沒用
         if (isGeminiServerError(e)) {
           console.warn('[gemini-direct] Gemini 服務錯誤，不 fallback:', e.message);
@@ -312,14 +348,15 @@
         // 其他錯誤（如 JSON 解析失敗、網路問題）→ 試 proxy
         console.warn('[gemini-direct] 失敗，嘗試 proxy fallback:', e.message);
         try {
-          return await recognizeViaProxy(file, hintType);
+          return await recognizeViaProxy(file, hintType, deadline);
         } catch (e2) {
+          if (isTimeout(e2)) throw e2;
           throw e;  // 回傳最初的 direct 錯誤（較有用）
         }
       }
     }
     // 沒 key（未登入或 RLS 阻擋）→ 用 proxy
-    return await recognizeViaProxy(file, hintType);
+    return await recognizeViaProxy(file, hintType, deadline);
   }
 
   function hasKey() {
@@ -329,5 +366,5 @@
   function setKey(k) { localStorage.setItem(KEY_STORAGE, k.trim()); }
   function getKey() { return localStorage.getItem(KEY_STORAGE) || ''; }
 
-  window.SMES_GEMINI = { recognize, hasKey, setKey, getKey, compressImage };
+  window.SMES_GEMINI = { recognize, hasKey, setKey, getKey, compressImage, RECOGNIZE_TIMEOUT_MS };
 })();
