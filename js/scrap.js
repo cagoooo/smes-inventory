@@ -96,8 +96,9 @@
   // 網頁上的「拍照」按鈕拍的照片，iPhone 不會存進相簿；所以這裡自己留一份縮圖和 AI 讀到的結果。
   // 點回來就能再用：不用再請 AI 讀一次（不花 AI 用量），加入時照片一樣會送到試算表。
   const SDB = { name: 'smes-scrap-shots', store: 's' };
-  const SHOT_KEEP = 30;
+  const SHOT_KEEP = 200;      // 一整間教室主機＋螢幕都拍也放得下
   const SHOT_DAYS = 7;
+  const SHOT_SHOW = 40;       // 畫面一次最多排 40 張（手機才不會卡），其餘用「只看還沒加入」找
   function sOpen() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(SDB.name, 1);
@@ -108,20 +109,41 @@
   }
   const sTx = (mode, fn) => idbTx(sOpen, SDB.store, mode, fn);
 
+  const shotAdded = (r) => !!(r.added && r.added.length);
+
+  // 保留規則：超過 7 天的刪掉；超過上限時「先刪已加入的（最舊的先）」，還沒加入、AI 沒讀到的盡量留住
+  function pruneShots(rows, keepN = SHOT_KEEP) {
+    const cutoff = Date.now() - SHOT_DAYS * 86400000;
+    const fresh = rows.filter((r) => r.id >= cutoff).sort((a, b) => b.id - a.id);
+    let extra = fresh.length - keepN;
+    const dropIds = new Set(rows.filter((r) => r.id < cutoff).map((r) => r.id));
+    if (extra > 0) {
+      const added = fresh.filter(shotAdded).sort((a, b) => a.id - b.id);
+      const rest = fresh.filter((r) => !shotAdded(r)).sort((a, b) => a.id - b.id);
+      for (const r of [...added, ...rest]) { if (extra <= 0) break; dropIds.add(r.id); extra--; }
+    }
+    return { keep: fresh.filter((r) => !dropIds.has(r.id)), dropIds: [...dropIds] };
+  }
+
+  async function applyPrune(rows, keepN) {
+    const { keep, dropIds } = pruneShots(rows, keepN);
+    if (dropIds.length) await sTx('readwrite', (s) => { dropIds.forEach((id) => s.delete(id)); });
+    dropIds.forEach(forgetShotUrl);
+    state.recent = keep;
+    return dropIds.length;
+  }
+
   async function loadRecent() {
     try {
       const rows = (await sTx('readonly', (s) => s.getAll())) || [];
-      const cutoff = Date.now() - SHOT_DAYS * 86400000;
-      rows.sort((a, b) => b.id - a.id);
-      const keep = rows.filter((r, i) => i < SHOT_KEEP && r.id >= cutoff);
-      const drop = rows.filter((r) => !keep.includes(r));
-      if (drop.length) await sTx('readwrite', (s) => { drop.forEach((r) => s.delete(r.id)); });
-      state.recent = keep;
+      await applyPrune(rows);
     } catch (e) {
       console.warn('[scrap] 讀取最近照片失敗', e);
       state.recent = [];
     }
     renderRecent();
+    // 請瀏覽器盡量不要在空間吃緊時自動清掉這些照片（不支援就算了）
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 忽略 */ }
   }
 
   // 照片縮好就先存（AI 讀失敗也留得住），讀到結果、加入清單後再更新
@@ -131,13 +153,33 @@
       const thumb = await shot.thumbP;
       if (!thumb) return;
       const rec = { id: shot.id, at: new Date(shot.id).toISOString(), part: shot.part || state.part, thumb, ai: shot.ai || null, added: shot.added || [] };
-      await sTx('readwrite', (s) => s.put(rec));
-      const i = (state.recent || []).findIndex((r) => r.id === rec.id);
-      if (i >= 0) state.recent[i] = rec; else state.recent = [rec, ...(state.recent || [])].slice(0, SHOT_KEEP);
+      try {
+        await sTx('readwrite', (s) => s.put(rec));
+      } catch (e) {
+        // 手機空間不夠：先刪一批已加入的舊照片再試一次
+        if (!/quota/i.test(e && (e.name + e.message))) throw e;
+        const n = await applyPrune(state.recent || [], Math.max(0, (state.recent || []).length - 20));
+        if (!n) throw e;
+        await sTx('readwrite', (s) => s.put(rec));
+      }
+      const others = (state.recent || []).filter((r) => r.id !== rec.id);
+      await applyPrune([rec, ...others]);
       renderRecent();
     } catch (e) {
       console.warn('[scrap] 照片存在手機失敗', e);
+      if (!state.shotSaveWarned) { state.shotSaveWarned = true; toast('⚠️ 照片沒能存在手機（空間可能不夠），這張請記得加入'); }
     }
+  }
+
+  // 縮圖用 blob 網址顯示，不把整串照片資料塞進畫面（200 張也不卡）
+  const shotUrls = new Map();
+  function shotUrl(r) {
+    if (!shotUrls.has(r.id)) shotUrls.set(r.id, URL.createObjectURL(b64ToFile(r.thumb, `shot-${r.id}.jpg`)));
+    return shotUrls.get(r.id);
+  }
+  function forgetShotUrl(id) {
+    const u = shotUrls.get(id);
+    if (u) { URL.revokeObjectURL(u); shotUrls.delete(id); }
   }
 
   function recentTag(r) {
@@ -155,20 +197,25 @@
     box.hidden = !rows.length;
     if (!rows.length) { box.innerHTML = ''; return; }
     const cur = state.shot && state.shot.id;
-    box.innerHTML = `<div class="rs-head"><b>🕘 最近拍的照片</b><small>只存在這支手機，保留 ${SHOT_DAYS} 天；點一下就能再用，不用再請 AI 讀</small>
+    const notAdded = rows.filter((r) => !shotAdded(r));
+    const onlyTodo = state.recentTodo && notAdded.length > 0;
+    const list = (onlyTodo ? notAdded : rows).slice(0, SHOT_SHOW);
+    const more = (onlyTodo ? notAdded : rows).length - list.length;
+    box.innerHTML = `<div class="rs-head"><b>🕘 最近拍的照片（${rows.length} 張）</b><small>只存在這支手機，保留 ${SHOT_DAYS} 天、最多 ${SHOT_KEEP} 張，空間不夠先刪已加入的；點一下就能再用，不用再請 AI 讀</small>
       <button type="button" class="rs-clear" data-shot-clear="1">清除</button></div>
-      <div class="rs-strip">${rows.map((r) => {
+      ${notAdded.length ? `<button type="button" class="rs-filter${onlyTodo ? ' on' : ''}" data-shot-todo="1">${onlyTodo ? '顯示全部照片' : `只看還沒加入的（${notAdded.length} 張）`}</button>` : ''}
+      <div class="rs-strip">${list.map((r) => {
         const t = new Date(r.id);
         const day = t.toDateString() === new Date().toDateString() ? '今天' : `${t.getMonth() + 1}/${t.getDate()}`;
         const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
         const what = r.ai ? [r.ai.brand, r.ai.model || r.ai.property_number, r.ai.roc_year && `民國${r.ai.roc_year}`].filter(Boolean).join(' ') : '';
         return `<button type="button" class="rs-item${r.id === cur ? ' active' : ''}" data-shot="${r.id}" aria-label="${esc(day + ' ' + hm + ' ' + (r.part || ''))}">
-          <img src="data:image/jpeg;base64,${r.thumb}" alt="" loading="lazy">
+          <img src="${shotUrl(r)}" alt="" loading="lazy">
           <span class="rs-time">${day} ${hm}・${esc(r.part || '')}</span>
           ${what ? `<span class="rs-what">${esc(what)}</span>` : ''}
           ${recentTag(r)}
         </button>`;
-      }).join('')}</div>`;
+      }).join('')}${more > 0 ? `<span class="rs-more">還有 ${more} 張較舊的</span>` : ''}</div>`;
   }
 
   function b64ToFile(b64, name) {
@@ -1266,6 +1313,7 @@
   async function clearRecent() {
     if (!confirm(`清除這支手機裡最近拍的 ${(state.recent || []).length} 張照片？\n（已加入報廢清單的照片在試算表裡還有，不受影響）`)) return;
     try { await sTx('readwrite', (s) => s.clear()); } catch (e) { toast('清除失敗：' + e.message); return; }
+    [...shotUrls.keys()].forEach(forgetShotUrl);
     state.recent = [];
     renderRecent();
     toast('已清除手機裡的照片');
@@ -1321,6 +1369,7 @@
       const saved = e.target.closest('[data-shot]');
       if (saved) { openSavedShot(Number(saved.dataset.shot)); return; }
       if (e.target.closest('[data-shot-clear]')) { clearRecent(); return; }
+      if (e.target.closest('[data-shot-todo]')) { state.recentTodo = !state.recentTodo; renderRecent(); return; }
       const del = e.target.closest('[data-del]');
       if (del) { removeItem(del.dataset.del); return; }
     });
@@ -1360,6 +1409,6 @@
   }
 
   // 給測試用（不影響正式功能）
-  window.SMES_SCRAP = { batchGroups, pnConflicts, syncInventoryStatus, revertInventoryStatus, removeItem, progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems, loadRecent, openSavedShot };
+  window.SMES_SCRAP = { batchGroups, pnConflicts, syncInventoryStatus, revertInventoryStatus, removeItem, progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems, loadRecent, openSavedShot, pruneShots };
   init();
 })();

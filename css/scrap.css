@@ -162,6 +162,9 @@
 .rs-tag.ok { background: var(--success-soft); color: #166534; }
 .rs-tag.no { background: var(--accent-soft); color: #9a5800; }
 .rs-tag.warn { background: var(--danger-soft); color: #b42318; }
+.rs-filter { margin-top: 8px; min-height: 40px; padding: 6px 14px; border-radius: 999px; border: 1px solid #f0b35a; background: var(--accent-soft); color: #9a5800; font: inherit; font-size: var(--fs-sm); font-weight: 700; cursor: pointer; }
+.rs-filter.on { background: var(--card); border-color: var(--border); color: var(--text-soft); }
+.rs-more { flex: 0 0 96px; align-self: center; text-align: center; font-size: 13px; color: var(--text-muted); }
 
 /* ---------- 辨識結果 ---------- */
 .result-card { padding: 16px; }
