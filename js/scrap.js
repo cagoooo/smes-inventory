@@ -21,6 +21,7 @@
     lastCandidates: [],
     showAll: false,
     pending: [],        // 網路不穩時先存在手機、等待補送的項目（IndexedDB）
+    recent: [],         // 最近拍的照片（IndexedDB，只在這支手機）
     flushing: false,
   };
 
@@ -77,11 +78,12 @@
       req.onerror = () => reject(req.error);
     });
   }
-  async function qTx(mode, fn) {
-    const db = await qOpen();
+  async function qTx(mode, fn) { return idbTx(qOpen, QDB.store, mode, fn); }
+  async function idbTx(open, store, mode, fn) {
+    const db = await open();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(QDB.store, mode);
-      const out = fn(tx.objectStore(QDB.store));
+      const tx = db.transaction(store, mode);
+      const out = fn(tx.objectStore(store));
       tx.oncomplete = () => { db.close(); resolve(out && 'result' in out ? out.result : undefined); };
       tx.onerror = () => { db.close(); reject(tx.error); };
     });
@@ -89,6 +91,111 @@
   const qAll = () => qTx('readonly', (s) => s.getAll());
   const qPut = (rec) => qTx('readwrite', (s) => s.put(rec));
   const qDel = (qid) => qTx('readwrite', (s) => s.delete(qid));
+
+  // ================= 最近拍的照片（只存在這支手機）=================
+  // 網頁上的「拍照」按鈕拍的照片，iPhone 不會存進相簿；所以這裡自己留一份縮圖和 AI 讀到的結果。
+  // 點回來就能再用：不用再請 AI 讀一次（不花 AI 用量），加入時照片一樣會送到試算表。
+  const SDB = { name: 'smes-scrap-shots', store: 's' };
+  const SHOT_KEEP = 30;
+  const SHOT_DAYS = 7;
+  function sOpen() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(SDB.name, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(SDB.store, { keyPath: 'id' });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  const sTx = (mode, fn) => idbTx(sOpen, SDB.store, mode, fn);
+
+  async function loadRecent() {
+    try {
+      const rows = (await sTx('readonly', (s) => s.getAll())) || [];
+      const cutoff = Date.now() - SHOT_DAYS * 86400000;
+      rows.sort((a, b) => b.id - a.id);
+      const keep = rows.filter((r, i) => i < SHOT_KEEP && r.id >= cutoff);
+      const drop = rows.filter((r) => !keep.includes(r));
+      if (drop.length) await sTx('readwrite', (s) => { drop.forEach((r) => s.delete(r.id)); });
+      state.recent = keep;
+    } catch (e) {
+      console.warn('[scrap] 讀取最近照片失敗', e);
+      state.recent = [];
+    }
+    renderRecent();
+  }
+
+  // 照片縮好就先存（AI 讀失敗也留得住），讀到結果、加入清單後再更新
+  async function saveShot(shot) {
+    if (!shot || shot.source !== 'photo' || !shot.thumbP) return;
+    try {
+      const thumb = await shot.thumbP;
+      if (!thumb) return;
+      const rec = { id: shot.id, at: new Date(shot.id).toISOString(), part: shot.part || state.part, thumb, ai: shot.ai || null, added: shot.added || [] };
+      await sTx('readwrite', (s) => s.put(rec));
+      const i = (state.recent || []).findIndex((r) => r.id === rec.id);
+      if (i >= 0) state.recent[i] = rec; else state.recent = [rec, ...(state.recent || [])].slice(0, SHOT_KEEP);
+      renderRecent();
+    } catch (e) {
+      console.warn('[scrap] 照片存在手機失敗', e);
+    }
+  }
+
+  function recentTag(r) {
+    const inList = listPNSet();
+    const added = (r.added || []).filter((pn) => inList.has(pn));
+    if (added.length) return `<span class="rs-tag ok">✅ 已加入${added.length > 1 ? ` ${added.length} 台` : ` ${esc(added[0])}`}</span>`;
+    if (!r.ai) return '<span class="rs-tag warn">⚠️ AI 沒讀到</span>';
+    return '<span class="rs-tag no">還沒加入</span>';
+  }
+
+  function renderRecent() {
+    const box = $('recentShots');
+    if (!box) return;
+    const rows = state.recent || [];
+    box.hidden = !rows.length;
+    if (!rows.length) { box.innerHTML = ''; return; }
+    const cur = state.shot && state.shot.id;
+    box.innerHTML = `<div class="rs-head"><b>🕘 最近拍的照片</b><small>只存在這支手機，保留 ${SHOT_DAYS} 天；點一下就能再用，不用再請 AI 讀</small>
+      <button type="button" class="rs-clear" data-shot-clear="1">清除</button></div>
+      <div class="rs-strip">${rows.map((r) => {
+        const t = new Date(r.id);
+        const day = t.toDateString() === new Date().toDateString() ? '今天' : `${t.getMonth() + 1}/${t.getDate()}`;
+        const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+        const what = r.ai ? [r.ai.brand, r.ai.model || r.ai.property_number, r.ai.roc_year && `民國${r.ai.roc_year}`].filter(Boolean).join(' ') : '';
+        return `<button type="button" class="rs-item${r.id === cur ? ' active' : ''}" data-shot="${r.id}" aria-label="${esc(day + ' ' + hm + ' ' + (r.part || ''))}">
+          <img src="data:image/jpeg;base64,${r.thumb}" alt="" loading="lazy">
+          <span class="rs-time">${day} ${hm}・${esc(r.part || '')}</span>
+          ${what ? `<span class="rs-what">${esc(what)}</span>` : ''}
+          ${recentTag(r)}
+        </button>`;
+      }).join('')}</div>`;
+  }
+
+  function b64ToFile(b64, name) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new File([bytes], name, { type: 'image/jpeg' });
+  }
+
+  // 點回之前拍的照片：用存下來的 AI 結果直接比對，不再呼叫 AI
+  async function openSavedShot(id) {
+    const r = (state.recent || []).find((x) => x.id === id);
+    if (!r) return;
+    if (r.part && r.part !== state.part) {
+      state.part = r.part;
+      document.querySelectorAll('.part-btn').forEach((x) => x.classList.toggle('active', x.dataset.part === r.part));
+    }
+    const shot = {
+      id: r.id, source: 'photo', part: r.part, file: b64ToFile(r.thumb, `shot-${r.id}.jpg`), ai: r.ai ? { ...r.ai } : null,
+      thumbP: Promise.resolve(r.thumb), photoFor: new Set(r.added || []), added: [...(r.added || [])], reused: true,
+    };
+    showShot(shot);
+    renderRecent();
+    if (!shot.ai) { await recognizeShot(shot); return; }
+    await processShot(shot, { reuse: true });
+    toast('♻️ 用這張照片之前讀到的結果，沒有再請 AI 讀');
+  }
 
   async function reloadPending() {
     try {
@@ -444,6 +551,7 @@
   }
 
   function renderList() {
+    renderRecent();
     const items = allItems().sort((a, b) => (b.pending === true) - (a.pending === true) || String(b.addedAt).localeCompare(String(a.addedAt)));
     const nPend = state.pending.length;
     $('pendingBar').innerHTML = nPend
@@ -655,7 +763,8 @@
     if (btn) { btn.disabled = true; btn.textContent = '寫入中…'; }
     const s = state.shot;
     const ai = s?.ai;
-    const photo = s && !s.photoSent && s.thumbP ? await s.thumbP.catch(() => '') : '';
+    // 同一張照片加入不同財產編號時，每一台都附照片（總務處要每台都有照片）；同一台補記就不再重複附
+    const photo = s && s.thumbP && !(s.photoFor && s.photoFor.has(rec.property_number)) ? await s.thumbP.catch(() => '') : '';
     const payload = {
       batch,
       item: mapRec(rec),
@@ -671,7 +780,7 @@
     const undo = (id) => ({ label: '復原', fn: () => removeItem(id, true) });
     try {
       const data = await gas('add', payload, ADD_TIMEOUT_MS);
-      if (s && photo) s.photoSent = true;
+      markShotAdded(s, rec.property_number, photo);
       const idx = state.items.findIndex((i) => i.id === data.item.id);
       if (idx >= 0) state.items[idx] = data.item; else state.items.push(data.item);
       renderList(); rerenderCandidates();
@@ -699,7 +808,7 @@
         if (btn) { btn.disabled = false; btn.textContent = '＋ 加入報廢清單'; }
         return { ok: false };
       }
-      if (s && photo) s.photoSent = true;
+      markShotAdded(s, rec.property_number, photo);
       state.pending.push(q);
       renderList(); rerenderCandidates(); setStatus();
       if (!opts.quiet) {
@@ -709,6 +818,14 @@
       if (!opts.stay) setTimeout(() => $('captureCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 700);
       return { ok: true, queued: true };
     }
+  }
+
+  function markShotAdded(s, pn, photo) {
+    if (!s) return;
+    if (photo) (s.photoFor = s.photoFor || new Set()).add(pn);
+    if (s.source !== 'photo') return;
+    s.added = [...new Set([...(s.added || []), pn])];
+    saveShot(s);
   }
 
   // 🎯 標籤／序號 100% 相符、只有一筆、還沒在清單 → 自動加入（可在畫面上關掉）
@@ -736,19 +853,29 @@
 
   async function handleFile(file) {
     if (!file) return;
-    const shot = { id: Date.now(), source: 'photo', file, ai: null, photoSent: false, thumbP: makeThumb(file) };
+    const shot = { id: Date.now(), source: 'photo', part: state.part, file, ai: null, photoFor: new Set(), added: [], thumbP: makeThumb(file) };
     shot.thumbP.catch(() => {});
+    saveShot(shot);
+    showShot(shot);
+    await recognizeShot(shot);
+  }
+
+  function showShot(shot) {
     state.shot = shot;
     state.showAll = false;
     $('resultCard').style.display = '';
     $('shotPreview').hidden = false;
-    $('shotPreview').src = URL.createObjectURL(file);
-    $('shotStatus').innerHTML = '<span class="spin"></span> AI 辨識中…';
+    const prev = $('shotPreview').src;
+    if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+    $('shotPreview').src = URL.createObjectURL(shot.file);
+    $('shotStatus').innerHTML = shot.ai ? '比對中…' : '<span class="spin"></span> AI 辨識中…';
     $('aiChips').innerHTML = '';
     $('groupNotice').innerHTML = '';
     $('candList').innerHTML = '';
     $('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
+  async function recognizeShot(shot) {
     const hint = state.part === '財產標籤' ? 'label' : 'device';
     // 等超過 8 秒就顯示已等幾秒與上限，讓人知道還在等、最多等多久
     const limitSec = Math.round((SMES_GEMINI.RECOGNIZE_TIMEOUT_MS || 30000) / 1000);
@@ -762,13 +889,14 @@
       let parsed;
       try {
         let meta;
-        ({ parsed, meta } = await SMES_GEMINI.recognize(file, hint));
+        ({ parsed, meta } = await SMES_GEMINI.recognize(shot.file, hint));
         shot.meta = meta || null;
       } finally {
         clearInterval(waitTimer);
       }
       if (state.shot !== shot) return;
       shot.ai = parsed || {};
+      saveShot(shot);
       await processShot(shot);
     } catch (e) {
       if (state.shot !== shot) return;
@@ -783,13 +911,14 @@
   }
 
   // 辨識（或掃碼）完成後：列出候選 → 寫辨識紀錄 → 100% 相符就自動加入
-  async function processShot(shot) {
+  async function processShot(shot, opts = {}) {
     renderAiChips(shot.ai);
     const cands = findCandidates(shot.ai);
     state.lastCandidates = cands;
     renderShotCandidates();
     const groups = batchGroups(shot.ai, cands);
-    gas('log', {
+    // 點回舊照片時不再寫辨識紀錄（第一次拍的時候已經記過了）
+    if (!opts.reuse) gas('log', {
       part: shotPart(), ai: { ...shot.ai, photo_type: shot.source === 'qr' ? '條碼' : shot.ai.photo_type },
       best: cands[0] ? { propertyNumber: cands[0].rec.property_number, model: cands[0].rec.model, score: cands[0].score } : {},
       candidateCount: cands.length, sameModelCount: groups.length ? groups[0].recs.length : 0,
@@ -879,7 +1008,7 @@
     if (navigator.vibrate) navigator.vibrate(30);
     qrMsg(`<span class="spin"></span> 掃到「${esc(String(text).slice(0, 40))}」，比對中…`);
 
-    const shot = { id: now, source: 'qr', file: null, ai: { photo_type: '財產標籤', property_number: String(text).trim() }, photoSent: true, thumbP: null, weak: !qrLooksLikePN(text) };
+    const shot = { id: now, source: 'qr', file: null, ai: { photo_type: '財產標籤', property_number: String(text).trim() }, photoFor: new Set(), thumbP: null, weak: !qrLooksLikePN(text) };
     state.shot = shot;
     state.showAll = false;
     $('resultCard').style.display = '';
@@ -1134,6 +1263,14 @@
     }
   }
 
+  async function clearRecent() {
+    if (!confirm(`清除這支手機裡最近拍的 ${(state.recent || []).length} 張照片？\n（已加入報廢清單的照片在試算表裡還有，不受影響）`)) return;
+    try { await sTx('readwrite', (s) => s.clear()); } catch (e) { toast('清除失敗：' + e.message); return; }
+    state.recent = [];
+    renderRecent();
+    toast('已清除手機裡的照片');
+  }
+
   function bind() {
     $('partSeg').addEventListener('click', (e) => {
       const b = e.target.closest('.part-btn');
@@ -1147,7 +1284,7 @@
       handleFile(f);
     }));
     $('btnLive').addEventListener('click', () => SMES_CAMERA.open(handleFile));
-    $('btnCloseShot').addEventListener('click', () => { state.shot = null; $('resultCard').style.display = 'none'; renderSearch(); });
+    $('btnCloseShot').addEventListener('click', () => { state.shot = null; $('resultCard').style.display = 'none'; renderSearch(); renderRecent(); });
 
     let saveTimer;
     $('batchInput').addEventListener('change', () => {
@@ -1180,7 +1317,10 @@
       const multi = e.target.closest('[data-multi]');
       if (multi) { addManyFromGroup(multi.dataset.multi); return; }
       if (e.target.closest('[data-more]')) { state.showAll = true; renderShotCandidates(); return; }
-      if (e.target.closest('[data-retry]')) { if (state.shot?.file) handleFile(state.shot.file); return; }
+      if (e.target.closest('[data-retry]')) { if (state.shot?.file) { showShot(state.shot); recognizeShot(state.shot); } return; }
+      const saved = e.target.closest('[data-shot]');
+      if (saved) { openSavedShot(Number(saved.dataset.shot)); return; }
+      if (e.target.closest('[data-shot-clear]')) { clearRecent(); return; }
       const del = e.target.closest('[data-del]');
       if (del) { removeItem(del.dataset.del); return; }
     });
@@ -1216,9 +1356,10 @@
     setStatus();
     loadInventory().then(() => { renderSearch(); renderList(); syncInventoryStatus(); });
     reloadPending().then(() => { renderList(); loadList(); });
+    loadRecent();
   }
 
   // 給測試用（不影響正式功能）
-  window.SMES_SCRAP = { batchGroups, pnConflicts, syncInventoryStatus, revertInventoryStatus, removeItem, progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
+  window.SMES_SCRAP = { batchGroups, pnConflicts, syncInventoryStatus, revertInventoryStatus, removeItem, progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems, loadRecent, openSavedShot };
   init();
 })();
