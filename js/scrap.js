@@ -285,11 +285,99 @@
     return list.slice(0, 60);
   }
 
-  function sameModelPeers(cands) {
-    const top = cands[0];
-    if (!top || top.score >= 100 || top.method !== '型號比對') return [];
-    const peers = cands.filter((c) => c.score === top.score && c.rec._group === top.rec._group);
-    return peers.length > 1 ? peers : [];
+  // 整批採購的同款電腦長得一模一樣、通常也沒有各自的財產標籤，報廢時挑哪一台都可以。
+  // 只要照片讀到廠牌或型號（再加上年份更準），就把清冊裡兜得起來的「那一批」列出來，
+  // 讓老師按一下就加入其中一台還沒加入的，不用卡在「找不到相近的設備」。
+  function batchGroups(ai, cands) {
+    if (!ai || !state.inventory) return [];
+    const top = cands && cands[0];
+    if (top && (top.score >= 100 || top.method === '財產編號相近')) return [];
+    const aiBrands = brandsIn(ai.brand);
+    const aiTokens = modelTokens(String(ai.model || '')).filter((t) => t.length >= 4);
+    if (!aiBrands.size && !aiTokens.length) return [];
+    let pool = state.inventory;
+    if (aiBrands.size) pool = pool.filter((r) => [...aiBrands].some((b) => r._brands.has(b)));
+    if (aiTokens.length) {
+      const byModel = pool.filter((r) => aiTokens.some((t) => shareChunk(t, r._text, 4)));
+      if (byModel.length) pool = byModel;       // 型號對得到就只留那一批
+      else if (!aiBrands.size) return [];        // 型號對不到、也沒讀到廠牌 → 不猜
+    }
+    const y = Number(ai.roc_year);
+    if (y) {
+      const exact = pool.filter((r) => r.acquired_year === y);
+      pool = exact.length ? exact : pool.filter((r) => r.acquired_year && Math.abs(r.acquired_year - y) <= 1);
+    }
+    if (!pool.length) return [];
+    const loc = $('locationSelect').value;
+    const inList = listPNSet();
+    const map = new Map();
+    pool.forEach((r) => { if (!map.has(r._group)) map.set(r._group, []); map.get(r._group).push(r); });
+    return [...map.entries()].map(([key, recs]) => {
+      const remain = recs.filter((r) => !inList.has(r.property_number) && r.status !== SCRAP_STATUS)
+        .sort((a, b) => ((b._loc === loc) - (a._loc === loc)) || String(a.property_number).localeCompare(String(b.property_number)));
+      const here = loc ? recs.filter((r) => r._loc === loc).length : 0;
+      return { key, recs, remain, here, sample: recs[0], locs: [...new Set(recs.map((r) => r._loc).filter(Boolean))] };
+    }).sort((a, b) => (b.here > 0) - (a.here > 0) || b.recs.length - a.recs.length).slice(0, 4);
+  }
+
+  function batchMethod(g) {
+    const r = g.sample;
+    return `同批推定（${r.model || r.item_name || ''}${r.acquired_year ? ` 民國${r.acquired_year}` : ''}，同批 ${g.recs.length} 台）`;
+  }
+
+  function groupNoticeHTML(groups, ai) {
+    if (!groups.length) return '';
+    const loc = $('locationSelect').value;
+    const read = [ai.brand, ai.model, ai.roc_year && `民國 ${ai.roc_year} 年`].filter(Boolean).join('、');
+    const rows = groups.map((g) => {
+      const r = g.sample;
+      const done = g.recs.length - g.remain.length;
+      return `<div class="gn-row">
+        <div class="gn-row-title">${esc(r.model || r.item_name || '')}${r.acquired_year ? `・民國 ${r.acquired_year} 年` : ''}</div>
+        <div class="gn-row-meta">清冊共 <b>${g.recs.length}</b> 台${g.locs.length ? `・📍 ${esc(g.locs.slice(0, 3).join('、'))}${g.locs.length > 3 ? ' 等' : ''}` : ''}${done ? `・已加入或已列報廢 ${done} 台` : ''}</div>
+        ${g.remain.length
+          ? `<div class="gn-btns">
+              <button type="button" class="btn btn-warn" data-next="${esc(g.remain[0].id)}" data-gkey="${esc(g.key)}">＋ 加入一台（${esc(g.remain[0].property_number)}）</button>
+              ${g.remain.length > 1 ? `<button type="button" class="btn btn-ghost gn-multi" data-multi="${esc(g.key)}">一次加入多台…</button>` : ''}
+            </div>`
+          : '<div class="gn-done">✓ 這批已經全部加入清單</div>'}
+      </div>`;
+    }).join('');
+    return `<div class="group-notice">
+      <div class="gn-title">🧮 照片讀到「${esc(read)}」，清冊裡${groups.length === 1 ? '是這一批' : `有 ${groups.length} 批符合`}</div>
+      <div class="gn-body">整批買進來的同款電腦長得一模一樣，報廢時<b>挑哪一台都可以</b>。按「加入一台」系統會自動挑一台還沒加入的${loc ? '（先挑上方選的地點）' : ''}，試算表會註記「同批推定」。${groups.length > 1 ? '<br>請選跟眼前這台一樣的那一批。' : ''}</div>
+      ${rows}
+    </div>`;
+  }
+
+  // 一次從同一批加入好幾台（例如整間電腦教室一起汰換）
+  async function addManyFromGroup(key) {
+    const g = (state.lastGroups || []).find((x) => x.key === key);
+    if (!g || !g.remain.length) return;
+    if (!currentBatch()) { toast('請先在上方輸入「報廢批次」名稱'); $('batchInput').focus(); return; }
+    const max = g.remain.length;
+    const ans = prompt(`要從「${g.sample.model || g.sample.item_name || ''}」這批加入幾台？\n（還有 ${max} 台沒加入，會依財產編號順序挑）`, String(Math.min(max, 5)));
+    if (ans == null) return;
+    const n = Math.floor(Number(String(ans).trim()));
+    if (!(n >= 1)) { toast('請輸入 1 以上的數字'); return; }
+    const picks = g.remain.slice(0, Math.min(n, max));
+    const method = batchMethod(g);
+    let ok = 0, queued = 0;
+    try {
+      for (const [k, rec] of picks.entries()) {
+        state.bulkStatus = `<span class="spin"></span> 加入中 ${k + 1}/${picks.length}：${esc(rec.property_number)}`;
+        $('shotStatus').innerHTML = state.bulkStatus;
+        const r = await addToList(rec, method, '', null, { stay: true, quiet: true });
+        if (!r.ok) break;
+        ok++; if (r.queued) queued++;
+      }
+    } finally {
+      state.bulkStatus = `✅ 這批已加入 ${ok} 台${queued ? `（${queued} 台先存在手機，連上後自動補送）` : ''}`;
+      rerenderCandidates();
+      state.bulkStatus = '';
+    }
+    if (navigator.vibrate) navigator.vibrate([40, 40, 40]);
+    toast(`✅ 已從同一批加入 ${ok} 台（清單共 ${allItems().length} 台）`);
   }
 
   // ================= 報廢清單 =================
@@ -585,9 +673,11 @@
       const idx = state.items.findIndex((i) => i.id === data.item.id);
       if (idx >= 0) state.items[idx] = data.item; else state.items.push(data.item);
       renderList(); rerenderCandidates();
-      if (navigator.vibrate) navigator.vibrate(opts.auto ? [40, 40, 40] : 40);
-      if (data.merged) toast(`${rec.property_number} 已在清單，補記「${payload.part}」`);
-      else toast(`${prefix} ${rec.property_number}（清單共 ${allItems().length} 台）`, undo(data.item.id));
+      if (!opts.quiet) {
+        if (navigator.vibrate) navigator.vibrate(opts.auto ? [40, 40, 40] : 40);
+        if (data.merged) toast(`${rec.property_number} 已在清單，補記「${payload.part}」`);
+        else toast(`${prefix} ${rec.property_number}（清單共 ${allItems().length} 台）`, undo(data.item.id));
+      }
       if (!opts.stay) setTimeout(() => $('captureCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 700);
       flushQueue();
       syncInventoryStatus();
@@ -610,8 +700,10 @@
       if (s && photo) s.photoSent = true;
       state.pending.push(q);
       renderList(); rerenderCandidates(); setStatus();
-      if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
-      toast(`📶 網路不穩，${rec.property_number} 先存在手機，連上後自動補送`, undo('q:' + q.qid));
+      if (!opts.quiet) {
+        if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+        toast(`📶 網路不穩，${rec.property_number} 先存在手機，連上後自動補送`, undo('q:' + q.qid));
+      }
       if (!opts.stay) setTimeout(() => $('captureCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 700);
       return { ok: true, queued: true };
     }
@@ -694,11 +786,11 @@
     const cands = findCandidates(shot.ai);
     state.lastCandidates = cands;
     renderShotCandidates();
-    const peers = sameModelPeers(cands);
+    const groups = batchGroups(shot.ai, cands);
     gas('log', {
       part: shotPart(), ai: { ...shot.ai, photo_type: shot.source === 'qr' ? '條碼' : shot.ai.photo_type },
       best: cands[0] ? { propertyNumber: cands[0].rec.property_number, model: cands[0].rec.model, score: cands[0].score } : {},
-      candidateCount: cands.length, sameModelCount: peers.length,
+      candidateCount: cands.length, sameModelCount: groups.length ? groups[0].recs.length : 0,
     }).catch((e) => console.warn('[scrap] log 失敗', e));
     const auto = autoAddCandidate(cands);
     if (!auto) return { auto: false, cands };
@@ -850,36 +942,28 @@
     if (!shot || !shot.ai) return;
     const inList = listPNSet();
     const top = cands[0];
+    const groups = batchGroups(shot.ai, cands);
+    state.lastGroups = groups;
+    $('groupNotice').innerHTML = groupNoticeHTML(groups, shot.ai);
     if (!top) {
+      if (groups.length) {
+        $('shotStatus').innerHTML = state.bulkStatus || '🧮 這是整批採購的同款電腦，挑一台加入就好';
+        $('candList').innerHTML = '<div class="cand-empty">如果上面都不是眼前這台，再改拍<b>財產標籤</b>或<b>機身銘牌（型號貼紙）</b>，或用下方搜尋手動找。</div>';
+        return;
+      }
       $('shotStatus').innerHTML = '🤔 清冊裡找不到相近的設備';
-      $('groupNotice').innerHTML = '';
       const onlyBrand = shot.ai.brand && !shot.ai.model && !shot.ai.property_number;
-      $('candList').innerHTML = `<div class="cand-empty">${onlyBrand ? `只讀到廠牌「${esc(shot.ai.brand)}」，同廠牌的電腦太多台。<br>` : ''}試試改拍<b>財產標籤</b>或<b>機身銘牌（型號貼紙）</b>，或用下方搜尋手動找。</div>`;
+      $('candList').innerHTML = `<div class="cand-empty">${onlyBrand ? `只讀到廠牌「${esc(shot.ai.brand)}」，清冊裡沒有這個廠牌的電腦。<br>` : ''}試試改拍<b>財產標籤</b>或<b>機身銘牌（型號貼紙）</b>，或用下方搜尋手動找。</div>`;
       return;
     }
     const topConflict = top.score >= 100 && top.conflicts && top.conflicts.length;
-    $('shotStatus').innerHTML = topConflict
+    $('shotStatus').innerHTML = state.bulkStatus ? state.bulkStatus : topConflict
       ? '<span class="err">⚠️ 編號對到了，但其他資料跟清冊不一樣，請核對標籤後再按加入</span>'
       : top.score >= 100
       ? '🎯 找到了！財產編號完全相符'
+      : groups.length
+      ? '🧮 這是整批採購的同款電腦，挑一台加入就好（下方也列出個別的財產）'
       : `🔍 找到 ${cands.length} 筆可能的財產，最接近的在最上面`;
-
-    const peers = sameModelPeers(cands);
-    if (peers.length) {
-      const remain = peers.filter((p) => !inList.has(p.rec.property_number));
-      const locs = [...new Set(peers.map((p) => p.rec._loc).filter(Boolean))].slice(0, 4).join('、');
-      $('groupNotice').innerHTML = `<div class="group-notice">
-        <div class="gn-title">🧮 清冊裡同型號、同年份共有 <b>${peers.length}</b> 台${locs ? `（${esc(locs)}）` : ''}</div>
-        <div class="gn-body">外觀一模一樣，光看機身分不出是哪一台。<br>
-        ✅ <b>最準確</b>：把「這張要拍的是」切到「財產標籤」再拍一次。<br>
-        ⚡ <b>這批全部都要報廢</b>：直接加入下一台還沒加入的（試算表會註記「型號推定」）。</div>
-        ${remain.length
-          ? `<button type="button" class="btn btn-warn" data-next="${esc(remain[0].rec.id)}">＋ 加入下一台：${esc(remain[0].rec.property_number)}（還剩 ${remain.length} 台）</button>`
-          : '<div class="gn-done">✓ 同型號的這批已經全部加入清單</div>'}
-      </div>`;
-    } else {
-      $('groupNotice').innerHTML = '';
-    }
     const show = state.showAll ? cands : cands.slice(0, SHOW_FIRST);
     $('candList').innerHTML = show.map((c) => candHTML(c, inList)).join('')
       + (cands.length > show.length ? `<button type="button" class="btn btn-ghost btn-block" data-more="1">顯示其他 ${cands.length - show.length} 筆</button>` : '');
@@ -1085,10 +1169,12 @@
       const next = e.target.closest('[data-next]');
       if (next) {
         const rec = state.byId.get(next.dataset.next);
-        const peers = sameModelPeers(state.lastCandidates);
-        if (rec) addToList(rec, `型號推定（同型號 ${peers.length} 台）`, state.lastCandidates[0]?.score ?? '', next);
+        const g = (state.lastGroups || []).find((x) => x.key === next.dataset.gkey);
+        if (rec) addToList(rec, g ? batchMethod(g) : '同批推定', '', next);
         return;
       }
+      const multi = e.target.closest('[data-multi]');
+      if (multi) { addManyFromGroup(multi.dataset.multi); return; }
       if (e.target.closest('[data-more]')) { state.showAll = true; renderShotCandidates(); return; }
       if (e.target.closest('[data-retry]')) { if (state.shot?.file) handleFile(state.shot.file); return; }
       const del = e.target.closest('[data-del]');
@@ -1129,6 +1215,6 @@
   }
 
   // 給測試用（不影響正式功能）
-  window.SMES_SCRAP = { pnConflicts, syncInventoryStatus, revertInventoryStatus, removeItem, progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
+  window.SMES_SCRAP = { batchGroups, pnConflicts, syncInventoryStatus, revertInventoryStatus, removeItem, progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
   init();
 })();
