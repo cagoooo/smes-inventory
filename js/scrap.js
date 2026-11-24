@@ -365,6 +365,7 @@
     let ok = 0, queued = 0;
     try {
       for (const [k, rec] of picks.entries()) {
+        state.bulkShot = state.shot;
         state.bulkStatus = `<span class="spin"></span> 加入中 ${k + 1}/${picks.length}：${esc(rec.property_number)}`;
         $('shotStatus').innerHTML = state.bulkStatus;
         const r = await addToList(rec, method, '', null, { stay: true, quiet: true });
@@ -372,9 +373,10 @@
         ok++; if (r.queued) queued++;
       }
     } finally {
+      // 結果留在狀態列，直到下一次拍照或按「加入一台」
       state.bulkStatus = `✅ 這批已加入 ${ok} 台${queued ? `（${queued} 台先存在手機，連上後自動補送）` : ''}`;
+      state.bulkShot = state.shot;
       rerenderCandidates();
-      state.bulkStatus = '';
     }
     if (navigator.vibrate) navigator.vibrate([40, 40, 40]);
     toast(`✅ 已從同一批加入 ${ok} 台（清單共 ${allItems().length} 台）`);
@@ -944,6 +946,7 @@
     const top = cands[0];
     const groups = batchGroups(shot.ai, cands);
     state.lastGroups = groups;
+    if (state.bulkShot !== shot) state.bulkStatus = '';
     $('groupNotice').innerHTML = groupNoticeHTML(groups, shot.ai);
     if (!top) {
       if (groups.length) {
@@ -1170,6 +1173,7 @@
       if (next) {
         const rec = state.byId.get(next.dataset.next);
         const g = (state.lastGroups || []).find((x) => x.key === next.dataset.gkey);
+        state.bulkStatus = '';
         if (rec) addToList(rec, g ? batchMethod(g) : '同批推定', '', next);
         return;
       }
