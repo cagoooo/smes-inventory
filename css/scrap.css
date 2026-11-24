@@ -220,6 +220,10 @@
 .cand-meta .age.old { color: var(--danger); font-weight: 700; }
 .cand-meta .age.mid { color: #c2410c; font-weight: 700; }
 .cand-reasons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.cand-warn {
+  margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+  background: #fef3c7; color: #78350f; font-size: 14px; line-height: 1.6; font-weight: 600;
+}
 .cand-reasons span { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #ecfdf5; color: #047857; font-weight: 600; }
 .cand-act { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
 .cand-act .btn { white-space: nowrap; min-height: 46px; font-weight: 800; }

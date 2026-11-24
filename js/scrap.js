@@ -203,11 +203,45 @@
     return null;
   }
 
+  // 編號完全相符時再多看一眼：標籤上一起讀到的廠牌／型號／年份，跟清冊這一筆兜不兜得起來。
+  // AI 看不清楚時可能猜一個號碼，而清冊的號碼很密集，猜錯也常常剛好是另一台真的電腦；
+  // 兜不起來就不自動加入，交給老師核對。（同一批採購的隔壁號碼型號年份都一樣，這裡擋不住。）
+  function shareChunk(a, b, n) {
+    // 一樣的那一段要含數字才算（不然光是「ACER」「ASUS」四個字母相同，會把不同型號當成一樣）
+    for (let i = 0; i + n <= a.length; i++) {
+      const chunk = a.slice(i, i + n);
+      if (/\d/.test(chunk) && b.includes(chunk)) return true;
+    }
+    return false;
+  }
+  function pnConflicts(rec, ai) {
+    const out = [];
+    if (!ai) return out;
+    // 拍的是螢幕時，廠牌型號是螢幕的，清冊那一筆記的是主機，不拿來比（只比年份）
+    const monitorShot = state.part === '螢幕' || ai.photo_type === '螢幕';
+    const aiBrands = monitorShot ? new Set() : brandsIn(ai.brand);
+    if (aiBrands.size && rec._brands.size && ![...aiBrands].some((b) => rec._brands.has(b))) {
+      out.push(`廠牌（照片讀到 ${ai.brand}，清冊是 ${rec.brand || [...rec._brands].join('／')}）`);
+    }
+    const aiModel = monitorShot ? '' : String(ai.model || '');
+    const aiTokens = modelTokens(aiModel).filter((t) => t.length >= 4);
+    if (aiTokens.length && rec._tokens.length) {
+      // 容許 AI 把型號看錯一兩個字：只要有連續 4 個字一樣就算同一型號
+      const hit = aiTokens.some((t) => shareChunk(t, rec._text, 4));
+      if (!hit) out.push(`型號（照片讀到 ${aiModel}，清冊是 ${rec.model || rec.item_name || ''}）`);
+    }
+    const y = Number(ai.roc_year);
+    if (y && rec.acquired_year && Math.abs(y - rec.acquired_year) >= 2) {
+      out.push(`年份（照片讀到民國 ${y}，清冊是民國 ${rec.acquired_year}）`);
+    }
+    return out;
+  }
+
   function scoreRecord(rec, ai, loc) {
     const reasons = [];
     const pn = pnMatch(ai.property_number, rec);
     const aiSN = norm(ai.serial_number);
-    if (pn === 'exact') return { score: 100, method: '財產編號', reasons: ['財產編號完全相同'] };
+    if (pn === 'exact') return { score: 100, method: '財產編號', reasons: ['財產編號完全相同'], conflicts: pnConflicts(rec, ai) };
     if (aiSN.length >= 5 && rec._sn && aiSN === rec._sn) return { score: 100, method: '序號', reasons: ['序號完全相同'] };
 
     let modelPts = 0, extra = 0;
@@ -589,6 +623,7 @@
     if (state.shot && state.shot.source === 'qr' && state.shot.weak) return null;
     const top = cands[0];
     if (!top || top.score < 100) return null;
+    if (top.conflicts && top.conflicts.length) return null;
     if (cands.filter((c) => c.score >= 100).length !== 1) return null;
     if (listPNSet().has(top.rec.property_number)) return null;
     return top;
@@ -822,7 +857,10 @@
       $('candList').innerHTML = `<div class="cand-empty">${onlyBrand ? `只讀到廠牌「${esc(shot.ai.brand)}」，同廠牌的電腦太多台。<br>` : ''}試試改拍<b>財產標籤</b>或<b>機身銘牌（型號貼紙）</b>，或用下方搜尋手動找。</div>`;
       return;
     }
-    $('shotStatus').innerHTML = top.score >= 100
+    const topConflict = top.score >= 100 && top.conflicts && top.conflicts.length;
+    $('shotStatus').innerHTML = topConflict
+      ? '<span class="err">⚠️ 編號對到了，但其他資料跟清冊不一樣，請核對標籤後再按加入</span>'
+      : top.score >= 100
       ? '🎯 找到了！財產編號完全相符'
       : `🔍 找到 ${cands.length} 筆可能的財產，最接近的在最上面`;
 
@@ -872,6 +910,7 @@
           ${r.unit_price ? `<span>💰 ${money(r.unit_price)}</span>` : ''}
         </div>
         ${c.reasons && c.reasons.length ? `<div class="cand-reasons">${c.reasons.map((x) => `<span>✓ ${esc(x)}</span>`).join('')}</div>` : ''}
+        ${c.conflicts && c.conflicts.length ? `<div class="cand-warn">⚠️ 編號相符，但這幾項跟照片讀到的不一樣：${c.conflicts.map((x) => esc(x)).join('、')}。<br>可能是 AI 把編號看錯了，請對照標籤上的編號再決定，所以沒有自動加入。</div>` : ''}
       </div>
       <div class="cand-act">
         ${already
@@ -1090,6 +1129,6 @@
   }
 
   // 給測試用（不影響正式功能）
-  window.SMES_SCRAP = { syncInventoryStatus, revertInventoryStatus, removeItem, progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
+  window.SMES_SCRAP = { pnConflicts, syncInventoryStatus, revertInventoryStatus, removeItem, progressGroups, scoreRecord, findCandidates, modelTokens, pnMatch, prepareRecord, state, flushQueue, onQrDecoded, allItems };
   init();
 })();
